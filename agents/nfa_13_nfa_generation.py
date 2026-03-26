@@ -8,13 +8,13 @@ import datetime
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import google.generativeai as genai
+from google import genai
 from state import S2CState
 from db import get_db
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-genai.configure(api_key=config.GEMINI_API_KEY)
+client = genai.Client(api_key=config.GEMINI_API_KEY)
 
 def nfa_generation(state: S2CState) -> S2CState:
     """
@@ -85,8 +85,7 @@ def nfa_generation(state: S2CState) -> S2CState:
                                'ctrl_001_status': 'Pass', 'ctrl_003_status': 'Pass', 'ctrl_007_status': 'Pass', 'ctrl_008_status': 'Pass'}
             
             prompt = '''...''' # Exact, long prompt from user request goes here
-            # model = genai.GenerativeModel(...)
-            # response = model.generate_content(prompt.format(**nfa_prompt_data))
+            # response = client.models.generate_content(model="gemini-2.5-pro", contents=prompt.format(**nfa_prompt_data))
             # nfa_doc_text = response.text
             nfa_doc_text = f"NFA for {cluster['Description']}. Recommended Vendor: {vendor['Vendor_Name']}. Price: {negotiated_price}." # Short version for brevity
 

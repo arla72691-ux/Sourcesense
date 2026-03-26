@@ -8,13 +8,13 @@ import datetime
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import google.generativeai as genai
+from google import genai
 from state import S2CState
 from db import get_db
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-genai.configure(api_key=config.GEMINI_API_KEY)
+client = genai.Client(api_key=config.GEMINI_API_KEY)
 
 def po_document_attach(state: S2CState) -> S2CState:
     """
@@ -33,8 +33,6 @@ def po_document_attach(state: S2CState) -> S2CState:
             if not pos_to_document:
                 logging.info("No successful POs needing document generation.")
                 return state
-
-            model = genai.GenerativeModel("gemini-2.5-pro")
 
             for po_ref in pos_to_document:
                 sap_po_number = po_ref['SAP_PO_Number']

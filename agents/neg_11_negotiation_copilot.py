@@ -9,13 +9,13 @@ import numpy as np
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import google.generativeai as genai
+from google import genai
 from state import S2CState
 from db import get_db
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-genai.configure(api_key=config.GEMINI_API_KEY)
+client = genai.Client(api_key=config.GEMINI_API_KEY)
 
 def negotiation_copilot(state: S2CState) -> S2CState:
     """
@@ -34,8 +34,6 @@ def negotiation_copilot(state: S2CState) -> S2CState:
             if not rfqs_to_process:
                 logging.info("No RFQs ready for negotiation strategy.")
                 return state
-
-            model = genai.GenerativeModel("gemini-2.5-pro")
 
             for rfq in rfqs_to_process:
                 rfq_id = rfq['RFQ_ID']
@@ -90,7 +88,7 @@ def negotiation_copilot(state: S2CState) -> S2CState:
                 }
 
                 prompt = '''...'''.format(**prompt_data) # Using the exact prompt from user request
-                response = model.generate_content(prompt)
+                response = client.models.generate_content(model="gemini-2.5-pro", contents=prompt)
                 strategy = json.loads(response.text.strip().replace('```json', '').replace('```', ''))
 
                 # Step 3: Store and act

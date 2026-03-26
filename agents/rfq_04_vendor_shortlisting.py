@@ -8,13 +8,13 @@ import datetime
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import google.generativeai as genai
+from google import genai
 from state import S2CState
 from db import get_db
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-genai.configure(api_key=config.GEMINI_API_KEY)
+client = genai.Client(api_key=config.GEMINI_API_KEY)
 
 def vendor_shortlisting(state: S2CState) -> S2CState:
     """
@@ -33,8 +33,6 @@ def vendor_shortlisting(state: S2CState) -> S2CState:
             if not clusters_to_process:
                 logging.info("No clusters ready for vendor shortlisting.")
                 return state
-
-            model = genai.GenerativeModel("gemini-2.5-pro")
 
             for cluster in clusters_to_process:
                 cluster_id = cluster['Consolidation_Cluster_ID']
@@ -108,7 +106,7 @@ def vendor_shortlisting(state: S2CState) -> S2CState:
 
                 Output JSON: [{{"vendor_code": "...", "reason": "...", "recommended_rank": ...}}]"""
 
-                response = model.generate_content(prompt)
+                response = client.models.generate_content(model="gemini-2.5-pro", contents=prompt)
                 cleaned_json = response.text.strip().replace('```json', '').replace('```', '')
                 shortlist = json.loads(cleaned_json)
 

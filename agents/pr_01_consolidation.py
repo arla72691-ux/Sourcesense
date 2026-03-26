@@ -10,7 +10,7 @@ from typing import List, Dict
 # Add project root to path to allow absolute imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import google.generativeai as genai
+from google import genai
 from state import S2CState
 from db import get_db
 import config
@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Configure Gemini AI
 try:
-    genai.configure(api_key=config.GEMINI_API_KEY)
+    client = genai.Client(api_key=config.GEMINI_API_KEY)
 except Exception as e:
     logging.error(f"Failed to configure Gemini AI: {e}")
     raise
@@ -33,7 +33,6 @@ def pr_consolidation(state: S2CState) -> S2CState:
     state['current_agent'] = "pr_01_consolidation"
     errors = state.get('errors', [])
     
-    model = genai.GenerativeModel("gemini-2.5-pro")
 
     prompt_template = '''
 You are a procurement clustering AI for a steel plant.
@@ -111,7 +110,7 @@ Return JSON: [{"cluster_name": "...", "pr_numbers": [...], "reason": "..."}]'''
         gemini_prompt = prompt_template.format(pr_list_json=json.dumps(pr_list_for_gemini, indent=2))
         
         logging.info("Calling Gemini for PR clustering...")
-        response = model.generate_content(gemini_prompt)
+        response = client.models.generate_content(model="gemini-2.5-pro", contents=gemini_prompt)
         
         try:
             cleaned_json_response = response.text.strip().replace('```json', '').replace('```', '')

@@ -8,13 +8,13 @@ import datetime
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import google.generativeai as genai
+from google import genai
 from state import S2CState
 from db import get_db
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-genai.configure(api_key=config.GEMINI_API_KEY)
+client = genai.Client(api_key=config.GEMINI_API_KEY)
 
 def tech_evaluation(state: S2CState) -> S2CState:
     """
@@ -38,8 +38,6 @@ def tech_evaluation(state: S2CState) -> S2CState:
             if not rfqs_to_eval:
                 logging.info("No RFQs with closed submissions to evaluate.")
                 return state
-
-            model = genai.GenerativeModel("gemini-2.5-pro")
 
             for rfq in rfqs_to_eval:
                 rfq_id = rfq['RFQ_ID']
@@ -74,7 +72,7 @@ def tech_evaluation(state: S2CState) -> S2CState:
                     Return JSON: {{"tech_score": ..., "breakdown": {{...}}, "tech_remarks": "...", "disqualify": false, "disqualify_reason": null}}"""
 
                     try:
-                        response = model.generate_content(prompt)
+                        response = client.models.generate_content(model="gemini-2.5-pro", contents=prompt)
                         cleaned_json = response.text.strip().replace('```json', '').replace('```', '')
                         eval_result = json.loads(cleaned_json)
                         

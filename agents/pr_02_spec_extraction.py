@@ -9,7 +9,7 @@ from email.mime.text import MIMEText
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import google.generativeai as genai
+from google import genai
 from state import S2CState
 from db import get_db
 import config
@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Configure Gemini
 try:
-    genai.configure(api_key=config.GEMINI_API_KEY)
+    client = genai.Client(api_key=config.GEMINI_API_KEY)
 except Exception as e:
     logging.error(f"Failed to configure Gemini AI: {e}")
     raise
@@ -52,7 +52,6 @@ def spec_extraction(state: S2CState) -> S2CState:
     errors = state.get('errors', [])
     specs_were_extracted = False
     
-    model = genai.GenerativeModel("gemini-2.5-pro")
     prompt_template = '''Extract structured technical specifications from this document. Output JSON: {"dimensions": {...}, "standards": [...], "alternatives": [...], "critical_parameters": [...], "inspection_requirements": [...]} '''
 
     try:
@@ -91,7 +90,7 @@ def spec_extraction(state: S2CState) -> S2CState:
                         with open(file_path, 'r', encoding='utf-8') as f:
                             doc_content = f.read()
                         
-                        response = model.generate_content(prompt_template + "\n\n" + doc_content)
+                        response = client.models.generate_content(model="gemini-2.5-pro", contents=prompt_template + "\n\n" + doc_content)
                         cleaned_json = response.text.strip().replace('```json', '').replace('```', '')
                         extracted_specs = json.loads(cleaned_json)
 

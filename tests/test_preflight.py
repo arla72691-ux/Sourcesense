@@ -197,7 +197,7 @@ print("\n[6] PYTHON PACKAGES")
 packages = {
     'langgraph': 'langgraph',
     'langchain': 'langchain',
-    'google.generativeai': 'google.generativeai (DEPRECATED — works but should migrate to google.genai)',
+    'google.genai': 'google-genai',
     'dotenv': 'python-dotenv',
 }
 for mod, label in packages.items():
@@ -242,13 +242,6 @@ issues_to_fix.append({
     "fix": "Use NULL or a placeholder for RFQ_ID at shortlisting stage; RFQ_ID gets set in RFQ.05"
 })
 
-# google.generativeai deprecation
-issues_to_fix.append({
-    "file": "ALL agents (19 files)",
-    "line": "top-level import",
-    "issue": "google.generativeai is deprecated — 'All support has ended'",
-    "fix": "Works NOW but will break eventually. Migrate to: from google import genai; client = genai.Client(api_key=...)"
-})
 
 if issues_to_fix:
     for i, issue in enumerate(issues_to_fix, 1):

@@ -63,8 +63,13 @@ def buyer_assignment(state: S2CState) -> S2CState:
                 cluster_id = cluster['Consolidation_Cluster_ID']
                 material_group = cluster['Material_Group']
                 total_value = cluster['Total_Value']
-                
-                cursor.execute("SELECT * FROM Buyer_Master WHERE Active_Status = 'Active' AND Material_Group_Codes LIKE ?", (f'%{material_group}%',))
+
+                cursor.execute("""
+                    SELECT bm.*, ad.Full_Name AS Buyer_Name, ad.Email AS Buyer_Email
+                    FROM Buyer_Master bm
+                    JOIN Active_Directory ad ON bm.Employee_ID = ad.Employee_ID
+                    WHERE ad.Active_Status = 'Active' AND bm.Material_Group_Codes LIKE ?
+                """, (f'%{material_group}%',))
                 potential_buyers = cursor.fetchall()
 
                 best_buyer = None
@@ -97,11 +102,11 @@ def buyer_assignment(state: S2CState) -> S2CState:
                     dop_tier = cursor.fetchone()
                     if dop_tier:
                         approver_designation = dop_tier['Approver_Designation']
-                        cursor.execute("SELECT Employee_Email FROM Designations_Master WHERE Designation_Code = ?", (approver_designation,))
+                        cursor.execute("SELECT Email FROM Active_Directory WHERE Designation_Code = ?", (approver_designation,))
                         approver = cursor.fetchone()
                         if approver:
                             cursor.execute("INSERT INTO Approval_Log (Entity_Type, Entity_ID, Approver_Email, Approver_Designation, Decision, Decided_At) VALUES (?, ?, ?, ?, ?, ?)",
-                                           ('Cluster', cluster_id, approver['Employee_Email'], approver_designation, 'Pending', datetime.datetime.now().isoformat()))
+                                           ('Cluster', cluster_id, approver['Email'], approver_designation, 'Pending', datetime.datetime.now().isoformat()))
                             logging.info(f"Approval request for {cluster_id} sent to {approver_designation} ({approver['Employee_Email']}).")
                         else:
                             errors.append(f"Could not find approver email for designation {approver_designation}.")

@@ -10,6 +10,7 @@ import numpy as np
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from google import genai
+from feedback import request_human_feedback
 from state import S2CState
 from db import get_db
 import config
@@ -108,7 +109,32 @@ def negotiation_copilot(state: S2CState) -> S2CState:
 
                 state['target_price'] = strategy['target_price']
                 state['walkaway_price'] = strategy['walkaway_price']
-                
+
+                # Human feedback: buyer reviews AI negotiation strategy before contacting vendor
+                cursor.execute("""
+                    SELECT c.Assigned_Buyer FROM Consolidated_PRs c
+                    JOIN RFQ_Log r ON c.Consolidation_Cluster_ID = r.Consolidation_Cluster_ID
+                    WHERE r.RFQ_ID = ?
+                """, (rfq_id,))
+                buyer_row = cursor.fetchone()
+                buyer_id = buyer_row['Assigned_Buyer'] if buyer_row else None
+                strategy_summary = json.dumps({
+                    'target_price': strategy.get('target_price'),
+                    'walkaway_price': strategy.get('walkaway_price'),
+                    'best_vendor': top_vendor['Vendor_Name'],
+                    'best_quote': top_vendor['Quoted_Unit_Price'],
+                    'lpp': lpp or 0,
+                }, indent=2)
+                request_human_feedback(
+                    cursor,
+                    stage='NEGOTIATION_STRATEGY_REVIEW',
+                    entity_type='RFQ',
+                    entity_id=rfq_id,
+                    context_summary=strategy_summary,
+                    feedback_by=buyer_id,
+                    simulate=True
+                )
+
                 cursor.execute("UPDATE RFQ_Log SET RFQ_Status = 'Under_Negotiation' WHERE RFQ_ID = ?", (rfq_id,))
 
     except Exception as e:

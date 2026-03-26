@@ -1,5 +1,6 @@
 # agents/eval_10_overall_ranking.py
 import logging
+import json
 import sys
 import os
 import datetime
@@ -10,6 +11,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from state import S2CState
 from db import get_db
+from feedback import request_human_feedback
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -105,6 +107,24 @@ def overall_ranking(state: S2CState) -> S2CState:
                 # Step 7: CTRL-011 final check
                 cursor.execute("INSERT INTO Compliance_Log (Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?,?,?,?,?,?)",
                                ('CTRL-011', 'RFQ', rfq_id, 'Pass', 'All submissions have been ranked.', datetime.datetime.now().isoformat()))
+
+                # Human feedback: buyer reviews ranking before negotiation starts
+                cursor.execute("""
+                    SELECT c.Assigned_Buyer FROM Consolidated_PRs c
+                    JOIN RFQ_Log r ON c.Consolidation_Cluster_ID = r.Consolidation_Cluster_ID
+                    WHERE r.RFQ_ID = ?
+                """, (rfq_id,))
+                buyer_row = cursor.fetchone()
+                buyer_id = buyer_row['Assigned_Buyer'] if buyer_row else None
+                request_human_feedback(
+                    cursor,
+                    stage='EVAL_RANKING_REVIEW',
+                    entity_type='RFQ',
+                    entity_id=rfq_id,
+                    context_summary=json.dumps(ranked_list, indent=2),
+                    feedback_by=buyer_id,
+                    simulate=True
+                )
 
                 # Step 8: Update final statuses
                 cursor.execute("UPDATE RFQ_Log SET RFQ_Status = 'Evaluation_Complete' WHERE RFQ_ID = ?", (rfq_id,))

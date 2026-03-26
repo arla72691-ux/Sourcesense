@@ -11,6 +11,7 @@ from typing import List, Dict
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from google import genai
+from feedback import request_human_feedback
 from state import S2CState
 from db import get_db
 import config
@@ -199,6 +200,26 @@ Return JSON: [{"cluster_name": "...", "pr_numbers": [...], "reason": "..."}]'''
 
         state['consolidated_clusters'] = consolidated_clusters_for_state
         logging.info(f"Successfully created {len(consolidated_clusters_for_state)} new clusters.")
+
+        # Human feedback: buyer reviews AI-generated clusters before pipeline proceeds
+        if consolidated_clusters_for_state:
+            with get_db(state['db_path']) as fb_conn:
+                fb_cursor = fb_conn.cursor()
+                summary = json.dumps([
+                    {"cluster_id": cl["cluster_id"],
+                     "pr_numbers": cl["pr_numbers"],
+                     "total_value": cl["total_value"]}
+                    for cl in consolidated_clusters_for_state
+                ], indent=2)
+                request_human_feedback(
+                    fb_cursor,
+                    stage='PR_CLUSTER_REVIEW',
+                    entity_type='Cluster_Batch',
+                    entity_id=f"BATCH-{consolidated_clusters_for_state[0]['cluster_id']}",
+                    context_summary=f"{len(consolidated_clusters_for_state)} clusters created:\n{summary}",
+                    feedback_by=None,
+                    simulate=True
+                )
 
     except json.JSONDecodeError as e:
         logging.error(f"Error decoding JSON from Gemini response: {e} - Response: {response.text}")

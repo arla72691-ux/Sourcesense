@@ -9,6 +9,7 @@ import datetime
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from google import genai
+from feedback import request_human_feedback
 from state import S2CState
 from db import get_db
 import config
@@ -122,6 +123,18 @@ def vendor_shortlisting(state: S2CState) -> S2CState:
                 
                 cursor.execute("UPDATE Consolidated_PRs SET PR_Status = 'Vendors_Shortlisted' WHERE Consolidation_Cluster_ID = ?", (cluster_id,))
                 logging.info(f"Final shortlist for {cluster_id} created with {len(shortlist)} vendors.")
+
+                # Human feedback: buyer reviews shortlist before RFQ is dispatched
+                buyer_id = cluster['Assigned_Buyer']
+                request_human_feedback(
+                    cursor,
+                    stage='VENDOR_SHORTLIST_REVIEW',
+                    entity_type='Cluster',
+                    entity_id=cluster_id,
+                    context_summary=json.dumps(shortlist, indent=2),
+                    feedback_by=buyer_id,
+                    simulate=True
+                )
 
                 # Step 13: Log Process Event
                 cursor.execute("INSERT INTO Process_Events_Log (Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?)",

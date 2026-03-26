@@ -10,6 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from state import S2CState
 from db import get_db
+from feedback import request_human_feedback
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -58,6 +59,34 @@ def sap_bapi_call(state: S2CState) -> S2CState:
                 # Step 4 & 5: Map terms and calculate value
                 sap_payment_terms = PAYMENT_TERMS_MAP.get(cluster_data['Payment_Terms'], 'Z030')
                 po_net_value = nfa_data['Negotiated_Unit_Price'] * cluster_data['Quantity']
+
+                # Human feedback: confirm PO details before committing to SAP
+                cursor.execute("""
+                    SELECT Assigned_Buyer FROM Consolidated_PRs
+                    WHERE Consolidation_Cluster_ID = ?
+                """, (call['Consolidation_Cluster_ID'],))
+                buyer_row = cursor.fetchone()
+                buyer_id = buyer_row['Assigned_Buyer'] if buyer_row else None
+                po_summary = (
+                    f"Vendor: {nfa_data['Recommended_Vendor']} | "
+                    f"Material: {cluster_data['Material_Code']} | "
+                    f"Qty: {cluster_data['Quantity']} {cluster_data['UOM_Base']} | "
+                    f"Unit Price: {nfa_data['Negotiated_Unit_Price']} | "
+                    f"Net Value: {po_net_value:.2f} INR | "
+                    f"NFA: {nfa_id}"
+                )
+                decision = request_human_feedback(
+                    cursor,
+                    stage='PO_CONFIRMATION',
+                    entity_type='PO_Reference',
+                    entity_id=po_ref_id,
+                    context_summary=po_summary,
+                    feedback_by=buyer_id,
+                    simulate=True
+                )
+                if decision != 'Approved':
+                    logging.warning(f"PO {po_ref_id} not approved by human reviewer. Skipping.")
+                    continue
 
                 # Step 6: BAPI Call Simulation with Retry Logic
                 success = False

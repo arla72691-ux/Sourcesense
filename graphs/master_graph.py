@@ -42,8 +42,8 @@ def build_master_graph():
     # Define the routing logic between phases
     def route_after_phase1(state):
         if state.get("should_stop"): return END
-        # buyer_assigned is the key state change that signals Phase 1 is done
-        if state.get("buyer_assigned"): 
+        # comm_terms_received signals all Phase 1 work (incl. commercial terms) is done
+        if state.get("comm_terms_received"):
             logging.info("MASTER ROUTER: Phase 1 complete, proceeding to Phase 2 (RFQ).")
             return "phase2_rfq"
         return END
@@ -81,6 +81,7 @@ if __name__ == "__main__":
         cluster_id=None, rfq_id=None, nfa_id=None, po_ref_id=None,
         current_agent="phase1_pr", next_agent=None, pr_status=None,
         consolidated_clusters=[], specs_extracted=False, buyer_assigned=None,
+        comm_terms_received=False,
         vendors_shortlisted=[], rfq_created=False, evaluations_complete=False,
         negotiated_price=None, nfa_approved=False, po_created=False,
         sap_po_number=None, errors=[], compliance_results={}, should_stop=False,

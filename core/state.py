@@ -17,6 +17,7 @@ class S2CState(TypedDict):
     consolidated_clusters: List[Dict]   # Output of PR.01
     specs_extracted: bool               # Output of PR.02
     buyer_assigned: Optional[str]       # Output of PR.03
+    comm_terms_received: bool           # Output of PR.03b
     vendors_shortlisted: List[str]      # Output of RFQ.04
     rfq_created: bool                   # Output of RFQ.05
     evaluations_complete: bool          # Output of EVAL.08-10

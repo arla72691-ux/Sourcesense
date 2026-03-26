@@ -28,7 +28,7 @@ def vendor_shortlisting(state: S2CState) -> S2CState:
     try:
         with get_db(state['db_path']) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM Consolidated_PRs WHERE PR_Status = 'Buyer_Assigned'")
+            cursor.execute("SELECT * FROM Consolidated_PRs WHERE PR_Status = 'Comm_Terms_Received'")
             clusters_to_process = cursor.fetchall()
 
             if not clusters_to_process:

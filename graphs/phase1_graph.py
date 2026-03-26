@@ -11,6 +11,7 @@ from state import S2CState
 from agents.pr_01_consolidation import pr_consolidation
 from agents.pr_02_spec_extraction import spec_extraction
 from agents.pr_03_buyer_assignment import buyer_assignment
+from agents.pr_03b_commercial_terms import commercial_terms_finalisation
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -19,10 +20,11 @@ def build_phase1_graph():
     """Builds the LangGraph StateGraph for Phase 1 of the S2C process."""
     graph = StateGraph(S2CState)
 
-    # Add the three agent nodes to the graph
+    # Add the four agent nodes to the graph
     graph.add_node("pr_consolidation", pr_consolidation)
     graph.add_node("spec_extraction", spec_extraction)
     graph.add_node("buyer_assignment", buyer_assignment)
+    graph.add_node("commercial_terms_finalisation", commercial_terms_finalisation)
 
     # The entry point of the graph is the PR consolidation agent
     graph.set_entry_point("pr_consolidation")
@@ -54,8 +56,11 @@ def build_phase1_graph():
 
     graph.add_conditional_edges("spec_extraction", route_after_specs)
     
-    # The buyer assignment is the last step in this phase
-    graph.add_edge("buyer_assignment", END)
+    # Buyer assignment feeds into commercial terms finalisation
+    graph.add_edge("buyer_assignment", "commercial_terms_finalisation")
+
+    # Commercial terms is the last step in Phase 1
+    graph.add_edge("commercial_terms_finalisation", END)
 
     return graph.compile()
 
@@ -72,8 +77,9 @@ if __name__ == "__main__":
         pr_status=None, 
         consolidated_clusters=[], 
         specs_extracted=False,
-        buyer_assigned=None, 
-        vendors_shortlisted=[], 
+        buyer_assigned=None,
+        comm_terms_received=False,
+        vendors_shortlisted=[],
         rfq_created=False,
         evaluations_complete=False, 
         negotiated_price=None, 

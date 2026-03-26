@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>S2C Process — Entity Relationship Diagram v2.0</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #F0F4F8; overflow: hidden; }
+  #header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: linear-gradient(135deg, #0D1B2A 0%, #1A3A5C 100%);
+    color: white; padding: 10px 20px;
+    display: flex; align-items: center; justify-content: space-between;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  }
+  #header h1 { font-size: 16px; font-weight: 700; letter-spacing: 0.5px; }
+  #header p { font-size: 11px; opacity: 0.75; margin-top: 2px; }
+  #legend {
+    display: flex; gap: 14px; align-items: center;
+    flex-wrap: wrap;
+  }
+  .leg-item {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 11px; white-space: nowrap;
+  }
+  .leg-dot {
+    width: 12px; height: 12px; border-radius: 3px;
+  }
+  #controls {
+    position: fixed; top: 60px; right: 14px; z-index: 100;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .btn {
+    background: white; border: 1px solid #CBD5E0; border-radius: 6px;
+    padding: 6px 12px; cursor: pointer; font-size: 12px; font-weight: 600;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+    transition: background 0.15s;
+  }
+  .btn:hover { background: #EBF4FF; }
+  #canvas-wrap {
+    position: fixed; top: 52px; left: 0; right: 0; bottom: 0;
+    overflow: hidden; cursor: grab;
+  }
+  #canvas-wrap:active { cursor: grabbing; }
+  svg { display: block; }
+  .entity-box { filter: drop-shadow(2px 3px 6px rgba(0,0,0,0.18)); }
+  .entity-box:hover { filter: drop-shadow(3px 5px 12px rgba(0,0,0,0.35)); }
+  .rel-line { pointer-events: none; }
+  .rel-label {
+    font-size: 9px; fill: #555; font-style: italic;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="header">
+  <div>
+    <h1>S2C Process &amp; Data Architecture — Entity Relationship Diagram</h1>
+    <p>38 Entities · 44 Relationships · Steel Plant (SAP ERP + Ariba + PiLog MDM) · Version 2.0 · March 2026</p>
+  </div>
+  <div id="legend">
+    <div class="leg-item"><div class="leg-dot" style="background:#1565C0"></div> MDM — Master Data</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#1B5E20"></div> ERP — Reference/Transactional</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#4A235A"></div> STM — S2C Transaction Data</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#7D6608"></div> DMS — Document Meta Data</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#78281F"></div> Compliance / Audit</div>
+    <div class="leg-item" style="margin-left:10px">
+      <svg width="30" height="12"><line x1="0" y1="6" x2="30" y2="6" stroke="#555" stroke-width="1.5" stroke-dasharray="4,2"/></svg>
+      1:M (FK link)
+    </div>
+    <div class="leg-item">
+      <svg width="30" height="12"><line x1="0" y1="6" x2="30" y2="6" stroke="#C0392B" stroke-width="1.5"/></svg>
+      M:M (join)
+    </div>
+    <div class="leg-item">
+      <svg width="30" height="12"><line x1="0" y1="6" x2="30" y2="6" stroke="#27AE60" stroke-width="2"/></svg>
+      1:1
+    </div>
+  </div>
+</div>
+<div id="controls">
+  <button class="btn" onclick="resetView()">⌂ Reset View</button>
+  <button class="btn" onclick="zoomIn()">+ Zoom In</button>
+  <button class="btn" onclick="zoomOut()">− Zoom Out</button>
+</div>
+<div id="canvas-wrap">
+  <svg id="main-svg" width="4200" height="3200" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arr-gray" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="#888"/>
+      </marker>
+      <marker id="arr-red" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="#C0392B"/>
+      </marker>
+      <marker id="arr-green" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="#27AE60"/>
+      </marker>
+      <marker id="arr-blue" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="#1565C0"/>
+      </marker>
+      <marker id="arr-purple" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="#6C3483"/>
+      </marker>
+      <!-- Area backgrounds -->
+      <filter id="shadow">
+        <feDropShadow dx="1" dy="2" stdDeviation="3" flood-opacity="0.2"/>
+      </filter>
+    </defs>
+
+    <!-- Background areas -->
+    <!-- MDM area -->
+    <rect x="25" y="25" width="3680" height="290" rx="16" fill="#DBEAFE" fill-opacity="0.5" stroke="#1565C0" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <text x="40" y="45" font-size="13" font-weight="bold" fill="#1565C0" font-family="Segoe UI,Arial">MDM — Master Data</text>
+
+    <!-- ERP area -->
+    <rect x="25" y="340" width="1340" height="270" rx="16" fill="#D1FAE5" fill-opacity="0.45" stroke="#1B5E20" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <text x="40" y="360" font-size="13" font-weight="bold" fill="#1B5E20" font-family="Segoe UI,Arial">ERP — Reference &amp; Transactional</text>
+
+    <!-- STM Core area -->
+    <rect x="25" y="640" width="3680" height="1950" rx="16" fill="#F3E5F5" fill-opacity="0.35" stroke="#6C3483" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <text x="40" y="662" font-size="13" font-weight="bold" fill="#6C3483" font-family="Segoe UI,Arial">Sourcing Tool Memory (STM) — Transaction Data</text>
+
+<g class="entity-box" id="ent_Material_Master">
+<rect x="43" y="58" width="240" height="232" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="40" y="55" width="240" height="232" rx="8" fill="#EBF5FB" stroke="#1565C0" stroke-width="2"/>
+<rect x="40" y="55" width="240" height="34" rx="8" fill="#1565C0"/>
+<rect x="40" y="81" width="240" height="8" fill="#1565C0"/>
+<text x="160" y="76" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">Material_Master</text>
+<rect x="44" y="91" width="232" height="16" rx="4" fill="#1565C0" fill-opacity="0.12"/>
+<text x="160" y="102" text-anchor="middle" font-size="9" fill="#1565C0" font-family="Segoe UI,Arial" font-weight="600">MDM</text>
+<text x="47" y="111" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Material_Code (PK)</text>
+<text x="49" y="129" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Material_Group | MRO-BRG</text>
+<text x="49" y="144" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Short_Description</text>
+<text x="49" y="159" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Last_Purchase_Price (LPP)</text>
+<text x="49" y="174" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Standard_Price / MAP</text>
+<text x="49" y="189" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Strategic_Category (Kraljic)</text>
+<text x="49" y="204" font-size="9" fill="#333" font-family="Segoe UI,Arial">  MSME_Preference_Flag</text>
+<text x="49" y="219" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Lead_Time_Days</text>
+<text x="49" y="234" font-size="9" fill="#333" font-family="Segoe UI,Arial">  HSN_SAC_Code</text>
+<text x="49" y="249" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Technical_Specs_Template (JSON)</text>
+<text x="49" y="264" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Created_At / Updated_At</text>
+</g>
+<g class="entity-box" id="ent_Buyer_Master">
+<rect x="343" y="58" width="230" height="196" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="340" y="55" width="230" height="196" rx="8" fill="#EBF5FB" stroke="#1565C0" stroke-width="2"/>
+<rect x="340" y="55" width="230" height="34" rx="8" fill="#1565C0"/>
+<rect x="340" y="81" width="230" height="8" fill="#1565C0"/>
+<text x="455" y="76" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">Buyer_Master</text>
+<rect x="344" y="91" width="222" height="16" rx="4" fill="#1565C0" fill-opacity="0.12"/>
+<text x="455" y="102" text-anchor="middle" font-size="9" fill="#1565C0" font-family="Segoe UI,Arial" font-weight="600">MDM</text>
+<text x="347" y="111" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Buyer_ID (PK)</text>
+<text x="349" y="129" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Buyer_Email</text>
+<text x="349" y="144" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Employee_ID</text>
+<text x="349" y="159" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Department / Designation</text>
+<text x="349" y="174" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Material_Group_Codes</text>
+<text x="349" y="189" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Annual_Spend_Limit (INR)</text>
+<text x="349" y="204" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Current_Workload / Max_Workload</text>
+<text x="349" y="219" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Manager_Email</text>
+<text x="349" y="234" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Active_Status</text>
+</g>
+<g class="entity-box" id="ent_Vendor_Master">
+<rect x="633" y="58" width="230" height="142" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="630" y="55" width="230" height="142" rx="8" fill="#EBF5FB" stroke="#1565C0" stroke-width="2"/>
+<rect x="630" y="55" width="230" height="34" rx="8" fill="#1565C0"/>
+<rect x="630" y="81" width="230" height="8" fill="#1565C0"/>
+<text x="745" y="76" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">Vendor_Master</text>
+<rect x="634" y="91" width="222" height="16" rx="4" fill="#1565C0" fill-opacity="0.12"/>
+<text x="745" y="102" text-anchor="middle" font-size="9" fill="#1565C0" font-family="Segoe UI,Arial" font-weight="600">MDM</text>
+<text x="637" y="111" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Vendor_Code (PK)</text>
+<text x="639" y="129" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Vendor_Legal_Name</text>
+<text x="639" y="144" font-size="9" fill="#333" font-family="Segoe UI,Arial">  GST_Number | PAN_Number</text>
+<text x="639" y="159" font-size="9" fill="#333" font-family="Segoe UI,Arial">  MSME_Number</text>
+<text x="639" y="174" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Vendor_Status</text>
+<text x="639" y="189" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Vendor_Email</text>
+</g>
+<g class="entity-box" id="ent_Supplier_Master">
+<rect x="923" y="58" width="240" height="178" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="920" y="55" width="240" height="178" rx="8" fill="#EBF5FB" stroke="#1565C0" stroke-width="2"/>
+<rect x="920" y="55" width="240" height="34" rx="8" fill="#1565C0"/>
+<rect x="920" y="81" width="240" height="8" fill="#1565C0"/>
+<text x="1040" y="76" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">Supplier_Master</text>
+<rect x="924" y="91" width="232" height="16" rx="4" fill="#1565C0" fill-opacity="0.12"/>
+<text x="1040" y="102" text-anchor="middle" font-size="9" fill="#1565C0" font-family="Segoe UI,Arial" font-weight="600">MDM</text>
+<text x="927" y="111" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Supplier_Code (PK) = Vendor_Code</text>
+<text x="929" y="129" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Supplier_Name</text>
+<text x="929" y="144" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Overall_Score | Quality_Score</text>
+<text x="929" y="159" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Delivery_Score | Cost_Score</text>
+<text x="929" y="174" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Status (Active/Soft_Block/Terminated)</text>
+<text x="929" y="189" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Last_Evaluation_Date</text>
+<text x="929" y="204" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Next_Evaluation_Due</text>
+<text x="929" y="219" font-size="9" fill="#333" font-family="Segoe UI,Arial">  CAPA_Issued_At / CAPA_Due_Date</text>
+</g>
+<g class="entity-box" id="ent_Onboarding_Tracker">
+<rect x="1223" y="58" width="240" height="178" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="1220" y="55" width="240" height="178" rx="8" fill="#EBF5FB" stroke="#1565C0" stroke-width="2"/>
+<rect x="1220" y="55" width="240" height="34" rx="8" fill="#1565C0"/>
+<rect x="1220" y="81" width="240" height="8" fill="#1565C0"/>
+<text x="1340" y="76" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">Onboarding_Tracker</text>
+<rect x="1224" y="91" width="232" height="16" rx="4" fill="#1565C0" fill-opacity="0.12"/>
+<text x="1340" y="102" text-anchor="middle" font-size="9" fill="#1565C0" font-family="Segoe UI,Arial" font-weight="600">MDM</text>
+<text x="1227" y="111" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Onboarding_ID (PK)</text>
+<text x="1229" y="129" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Vendor_Legal_Name</text>
+<text x="1229" y="144" font-size="9" fill="#333" font-family="Segoe UI,Arial">  GST_Number | PAN_Number | Aadhaar</text>
+<text x="1229" y="159" font-size="9" fill="#333" font-family="Segoe UI,Arial">  MSME_Number</text>
+<text x="1229" y="174" font-size="9" fill="#333" font-family="Segoe UI,Arial">  PAN_Valid | GST_Valid | Aadhaar_Valid</text>
+<text x="1229" y="189" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Finance_Decision</text>
+<text x="1229" y="204" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Submission_Status</text>
+<text x="1229" y="219" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Vendor_Activated_At (timestamp)</text>
+</g>
+<g class="entity-box" id="ent_Designations_Master">
+<rect x="1523" y="58" width="230" height="110" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="1520" y="55" width="230" height="110" rx="8" fill="#EBF5FB" stroke="#1565C0" stroke-width="2"/>
+<rect x="1520" y="55" width="230" height="34" rx="8" fill="#1565C0"/>
+<rect x="1520" y="81" width="230" height="8" fill="#1565C0"/>
+<text x="1635" y="76" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">Designations_Master</text>
+<rect x="1524" y="91" width="222" height="16" rx="4" fill="#1565C0" fill-opacity="0.12"/>
+<text x="1635" y="102" text-anchor="middle" font-size="9" fill="#1565C0" font-family="Segoe UI,Arial" font-weight="600">MDM</text>
+<text x="1527" y="111" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Designation_Code (PK)</text>
+<text x="1529" y="129" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Employee_Name</text>
+<text x="1529" y="144" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Employee_Email</text>
+</g>
+<g class="entity-box" id="ent_UOM_Conversion">
+<rect x="1813" y="58" width="220" height="110" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="1810" y="55" width="220" height="110" rx="8" fill="#EBF5FB" stroke="#1565C0" stroke-width="2"/>
+<rect x="1810" y="55" width="220" height="34" rx="8" fill="#1565C0"/>
+<rect x="1810" y="81" width="220" height="8" fill="#1565C0"/>
+<text x="1920" y="76" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">UOM_Conversion</text>
+<rect x="1814" y="91" width="212" height="16" rx="4" fill="#1565C0" fill-opacity="0.12"/>
+<text x="1920" y="102" text-anchor="middle" font-size="9" fill="#1565C0" font-family="Segoe UI,Arial" font-weight="600">MDM</text>
+<text x="1817" y="111" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 From_UOM + To_UOM_Base (composite PK)</text>
+<text x="1819" y="129" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Conversion_Factor</text>
+</g>
+<g class="entity-box" id="ent_Material_References">
+<rect x="2093" y="58" width="230" height="110" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="2090" y="55" width="230" height="110" rx="8" fill="#EBF5FB" stroke="#1565C0" stroke-width="2"/>
+<rect x="2090" y="55" width="230" height="34" rx="8" fill="#1565C0"/>
+<rect x="2090" y="81" width="230" height="8" fill="#1565C0"/>
+<text x="2205" y="76" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">Material_References</text>
+<rect x="2094" y="91" width="222" height="16" rx="4" fill="#1565C0" fill-opacity="0.12"/>
+<text x="2205" y="102" text-anchor="middle" font-size="9" fill="#1565C0" font-family="Segoe UI,Arial" font-weight="600">MDM</text>
+<text x="2097" y="111" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Material_Code (PK)</text>
+<text x="2097" y="128" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Material_Code → Material_Master</text>
+<line x1="2096" y1="140" x2="2314" y2="140" stroke="#CCC" stroke-width="0.5"/>
+<text x="2099" y="144" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Standard_Specs (JSON)</text>
+<text x="2099" y="159" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Reference_Price</text>
+</g>
+<g class="entity-box" id="ent_Master_PR_Data">
+<rect x="43" y="373" width="230" height="142" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="40" y="370" width="230" height="142" rx="8" fill="#E8F5E9" stroke="#1B5E20" stroke-width="2"/>
+<rect x="40" y="370" width="230" height="34" rx="8" fill="#1B5E20"/>
+<rect x="40" y="396" width="230" height="8" fill="#1B5E20"/>
+<text x="155" y="391" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">Master_PR_Data</text>
+<rect x="44" y="406" width="222" height="16" rx="4" fill="#1B5E20" fill-opacity="0.12"/>
+<text x="155" y="417" text-anchor="middle" font-size="9" fill="#1B5E20" font-family="Segoe UI,Arial" font-weight="600">ERP</text>
+<text x="47" y="426" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 PR_Number (PK)</text>
+<text x="49" y="444" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Material_Code | Plant | Cost_Center</text>
+<text x="49" y="459" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Quantity | UOM | Total_Value</text>
+<text x="49" y="474" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Requisitioner_Email</text>
+<text x="49" y="489" font-size="9" fill="#333" font-family="Segoe UI,Arial">  PR_Date | Required_Date</text>
+<text x="49" y="504" font-size="9" fill="#333" font-family="Segoe UI,Arial">  SAP MM source table: EBAN</text>
+</g>
+<g class="entity-box" id="ent_DOP">
+<rect x="333" y="373" width="250" height="124" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="330" y="370" width="250" height="124" rx="8" fill="#E8F5E9" stroke="#1B5E20" stroke-width="2"/>
+<rect x="330" y="370" width="250" height="34" rx="8" fill="#1B5E20"/>
+<rect x="330" y="396" width="250" height="8" fill="#1B5E20"/>
+<text x="455" y="391" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">DOP</text>
+<rect x="334" y="406" width="242" height="16" rx="4" fill="#1B5E20" fill-opacity="0.12"/>
+<text x="455" y="417" text-anchor="middle" font-size="9" fill="#1B5E20" font-family="Segoe UI,Arial" font-weight="600">ERP</text>
+<text x="337" y="426" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 DOP_ID (PK)</text>
+<text x="339" y="444" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Value_Range_Min / Max (INR)</text>
+<text x="339" y="459" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Tier_Level (1→N)</text>
+<text x="339" y="474" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Approver_Designation</text>
+<text x="339" y="489" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Procurement_Category</text>
+</g>
+<g class="entity-box" id="ent_Vendor_History">
+<rect x="643" y="373" width="240" height="160" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="640" y="370" width="240" height="160" rx="8" fill="#E8F5E9" stroke="#1B5E20" stroke-width="2"/>
+<rect x="640" y="370" width="240" height="34" rx="8" fill="#1B5E20"/>
+<rect x="640" y="396" width="240" height="8" fill="#1B5E20"/>
+<text x="760" y="391" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">Vendor_History</text>
+<rect x="644" y="406" width="232" height="16" rx="4" fill="#1B5E20" fill-opacity="0.12"/>
+<text x="760" y="417" text-anchor="middle" font-size="9" fill="#1B5E20" font-family="Segoe UI,Arial" font-weight="600">ERP</text>
+<text x="647" y="426" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 History_ID (PK)</text>
+<text x="647" y="443" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Vendor_Code → Vendor_Master</text>
+<text x="647" y="458" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Material_Code → Material_Master</text>
+<line x1="646" y1="470" x2="874" y2="470" stroke="#CCC" stroke-width="0.5"/>
+<text x="649" y="474" font-size="9" fill="#333" font-family="Segoe UI,Arial">  PO_Number | PO_Date</text>
+<text x="649" y="489" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Unit_Price | Total_PO_Value</text>
+<text x="649" y="504" font-size="9" fill="#333" font-family="Segoe UI,Arial">  GRN_Status | Delivery_Days</text>
+<text x="649" y="519" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Quality_Passed_Flag</text>
+</g>
+<g class="entity-box" id="ent_Monthly_Performance">
+<rect x="943" y="373" width="240" height="142" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="940" y="370" width="240" height="142" rx="8" fill="#E8F5E9" stroke="#1B5E20" stroke-width="2"/>
+<rect x="940" y="370" width="240" height="34" rx="8" fill="#1B5E20"/>
+<rect x="940" y="396" width="240" height="8" fill="#1B5E20"/>
+<text x="1060" y="391" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">Monthly_Performance</text>
+<rect x="944" y="406" width="232" height="16" rx="4" fill="#1B5E20" fill-opacity="0.12"/>
+<text x="1060" y="417" text-anchor="middle" font-size="9" fill="#1B5E20" font-family="Segoe UI,Arial" font-weight="600">ERP</text>
+<text x="947" y="426" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Perf_ID (PK)</text>
+<text x="947" y="443" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Supplier_Code → Supplier_Master</text>
+<line x1="946" y1="455" x2="1174" y2="455" stroke="#CCC" stroke-width="0.5"/>
+<text x="949" y="459" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Month_Year</text>
+<text x="949" y="474" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Quality_Score | Delivery_Score | Cost_Score</text>
+<text x="949" y="489" font-size="9" fill="#333" font-family="Segoe UI,Arial">  POs_Issued | GRNs_Completed</text>
+<text x="949" y="504" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Rejections | Calculated_At</text>
+</g>
+<g class="entity-box" id="ent_Procurement_Historical_Pricing">
+<rect x="1243" y="373" width="240" height="142" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="1240" y="370" width="240" height="142" rx="8" fill="#E8F5E9" stroke="#1B5E20" stroke-width="2"/>
+<rect x="1240" y="370" width="240" height="34" rx="8" fill="#1B5E20"/>
+<rect x="1240" y="396" width="240" height="8" fill="#1B5E20"/>
+<text x="1360" y="391" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">Procurement_Historical_Pricing</text>
+<rect x="1244" y="406" width="232" height="16" rx="4" fill="#1B5E20" fill-opacity="0.12"/>
+<text x="1360" y="417" text-anchor="middle" font-size="9" fill="#1B5E20" font-family="Segoe UI,Arial" font-weight="600">ERP</text>
+<text x="1247" y="426" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Pricing_ID (PK)</text>
+<text x="1247" y="443" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Material_Code → Material_Master</text>
+<line x1="1246" y1="455" x2="1474" y2="455" stroke="#CCC" stroke-width="0.5"/>
+<text x="1249" y="459" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Vendor_Code | PO_Date</text>
+<text x="1249" y="474" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Unit_Price | Currency</text>
+<text x="1249" y="489" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Quantity | Plant</text>
+<text x="1249" y="504" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Used for auction ceiling price (S2C.NEG.17)</text>
+</g>
+<g class="entity-box" id="ent_Consolidated_PRs">
+<rect x="43" y="673" width="290" height="268" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="40" y="670" width="290" height="268" rx="8" fill="#F5EEF8" stroke="#4A235A" stroke-width="2"/>
+<rect x="40" y="670" width="290" height="34" rx="8" fill="#4A235A"/>
+<rect x="40" y="696" width="290" height="8" fill="#4A235A"/>
+<text x="185" y="691" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">Consolidated_PRs</text>
+<rect x="44" y="706" width="282" height="16" rx="4" fill="#4A235A" fill-opacity="0.12"/>
+<text x="185" y="717" text-anchor="middle" font-size="9" fill="#4A235A" font-family="Segoe UI,Arial" font-weight="600">STM — CENTRAL HUB</text>
+<text x="47" y="726" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Consolidation_Cluster_ID (PK)</text>
+<text x="47" y="743" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 PR_Number → Master_PR_Data</text>
+<text x="47" y="758" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Material_Code → Material_Master</text>
+<text x="47" y="773" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Buyer_Email → Buyer_Master</text>
+<text x="47" y="788" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 RFQ_ID → RFQ_Log</text>
+<line x1="46" y1="800" x2="324" y2="800" stroke="#CCC" stroke-width="0.5"/>
+<text x="49" y="804" font-size="9" fill="#333" font-family="Segoe UI,Arial">  PR_Status (workflow state)</text>
+<text x="49" y="819" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Plant | Cost_Center | WBS</text>
+<text x="49" y="834" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Total_Value (INR)</text>
+<text x="49" y="849" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Procurement_Category</text>
+<text x="49" y="864" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Repeat_Emergency_Flag (CTRL-017)</text>
+<text x="49" y="879" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Budget_Overrun_Flag (CTRL-006)</text>
+<text x="49" y="894" font-size="9" fill="#333" font-family="Segoe UI,Arial">  15 Lifecycle Timestamps →</text>
+<text x="49" y="909" font-size="9" fill="#333" font-family="Segoe UI,Arial">    Created_At → Closed_At</text>
+</g>
+<g class="entity-box" id="ent_Vendor_Shortlist">
+<rect x="403" y="673" width="240" height="214" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="400" y="670" width="240" height="214" rx="8" fill="#F5EEF8" stroke="#4A235A" stroke-width="2"/>
+<rect x="400" y="670" width="240" height="34" rx="8" fill="#4A235A"/>
+<rect x="400" y="696" width="240" height="8" fill="#4A235A"/>
+<text x="520" y="691" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">Vendor_Shortlist</text>
+<rect x="404" y="706" width="232" height="16" rx="4" fill="#4A235A" fill-opacity="0.12"/>
+<text x="520" y="717" text-anchor="middle" font-size="9" fill="#4A235A" font-family="Segoe UI,Arial" font-weight="600">STM</text>
+<text x="407" y="726" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Shortlist_ID (PK)</text>
+<text x="407" y="743" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Consolidation_Cluster_ID → Consolidated_PRs</text>
+<text x="407" y="758" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Vendor_Code → Vendor_Master</text>
+<text x="407" y="773" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 RFQ_ID → RFQ_Log</text>
+<line x1="406" y1="785" x2="634" y2="785" stroke="#CCC" stroke-width="0.5"/>
+<text x="409" y="789" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Vendor_Name | Vendor_Type</text>
+<text x="409" y="804" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Combined_Score | Shortlist_Rank</text>
+<text x="409" y="819" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Credit_Rating</text>
+<text x="409" y="834" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Annual_Revenue_INR</text>
+<text x="409" y="849" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Blacklist_Check_Status (CTRL-007)</text>
+<text x="409" y="864" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Perf_Gate_Override (CTRL-014)</text>
+</g>
+<g class="entity-box" id="ent_Spec_Requests">
+<rect x="703" y="673" width="220" height="160" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="700" y="670" width="220" height="160" rx="8" fill="#F5EEF8" stroke="#4A235A" stroke-width="2"/>
+<rect x="700" y="670" width="220" height="34" rx="8" fill="#4A235A"/>
+<rect x="700" y="696" width="220" height="8" fill="#4A235A"/>
+<text x="810" y="691" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">Spec_Requests</text>
+<rect x="704" y="706" width="212" height="16" rx="4" fill="#4A235A" fill-opacity="0.12"/>
+<text x="810" y="717" text-anchor="middle" font-size="9" fill="#4A235A" font-family="Segoe UI,Arial" font-weight="600">STM</text>
+<text x="707" y="726" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Spec_ID (PK)</text>
+<text x="707" y="743" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Consolidation_Cluster_ID → Consolidated_PRs</text>
+<line x1="706" y1="755" x2="914" y2="755" stroke="#CCC" stroke-width="0.5"/>
+<text x="709" y="759" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Spec_Type</text>
+<text x="709" y="774" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Requestor_Email</text>
+<text x="709" y="789" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Spec_File_ID (DMS)</text>
+<text x="709" y="804" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Extracted_Specs (JSON)</text>
+<text x="709" y="819" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Status</text>
+</g>
+<g class="entity-box" id="ent_RFQ_Log">
+<rect x="43" y="943" width="250" height="160" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="40" y="940" width="250" height="160" rx="8" fill="#F5EEF8" stroke="#4A235A" stroke-width="2"/>
+<rect x="40" y="940" width="250" height="34" rx="8" fill="#4A235A"/>
+<rect x="40" y="966" width="250" height="8" fill="#4A235A"/>
+<text x="165" y="961" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">RFQ_Log</text>
+<rect x="44" y="976" width="242" height="16" rx="4" fill="#4A235A" fill-opacity="0.12"/>
+<text x="165" y="987" text-anchor="middle" font-size="9" fill="#4A235A" font-family="Segoe UI,Arial" font-weight="600">STM</text>
+<text x="47" y="996" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 RFQ_ID (PK)</text>
+<text x="47" y="1013" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Consolidation_Cluster_ID → Consolidated_PRs</text>
+<line x1="46" y1="1025" x2="284" y2="1025" stroke="#CCC" stroke-width="0.5"/>
+<text x="49" y="1029" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Category_Type (Supply/Services)</text>
+<text x="49" y="1044" font-size="9" fill="#333" font-family="Segoe UI,Arial">  RFQ_Excel_File_ID (DMS)</text>
+<text x="49" y="1059" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Approval_Status | Dispatch_Status</text>
+<text x="49" y="1074" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Vendor_Count</text>
+<text x="49" y="1089" font-size="9" fill="#333" font-family="Segoe UI,Arial">  RFQ_Created_At → All_Evals_Complete_At</text>
+</g>
+<g class="entity-box" id="ent_Approval_Log">
+<rect x="353" y="943" width="240" height="178" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="350" y="940" width="240" height="178" rx="8" fill="#F5EEF8" stroke="#4A235A" stroke-width="2"/>
+<rect x="350" y="940" width="240" height="34" rx="8" fill="#4A235A"/>
+<rect x="350" y="966" width="240" height="8" fill="#4A235A"/>
+<text x="470" y="961" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">Approval_Log</text>
+<rect x="354" y="976" width="232" height="16" rx="4" fill="#4A235A" fill-opacity="0.12"/>
+<text x="470" y="987" text-anchor="middle" font-size="9" fill="#4A235A" font-family="Segoe UI,Arial" font-weight="600">STM</text>
+<text x="357" y="996" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Approval_ID (PK)</text>
+<text x="357" y="1013" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 RFQ_ID → RFQ_Log</text>
+<text x="357" y="1028" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Approver_Email → Designations_Master</text>
+<text x="357" y="1043" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Tier_Level → DOP</text>
+<line x1="356" y1="1055" x2="584" y2="1055" stroke="#CCC" stroke-width="0.5"/>
+<text x="359" y="1059" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Tier_Level (1→N per DOP)</text>
+<text x="359" y="1074" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Approval_Status</text>
+<text x="359" y="1089" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Requested_At | Decided_At</text>
+<text x="359" y="1104" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Reminder_Sent_At | Escalated_At</text>
+</g>
+<g class="entity-box" id="ent_SVJ_Log">
+<rect x="653" y="943" width="240" height="196" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="650" y="940" width="240" height="196" rx="8" fill="#FDEDEC" stroke="#78281F" stroke-width="2"/>
+<rect x="650" y="940" width="240" height="34" rx="8" fill="#78281F"/>
+<rect x="650" y="966" width="240" height="8" fill="#78281F"/>
+<text x="770" y="961" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">SVJ_Log</text>
+<rect x="654" y="976" width="232" height="16" rx="4" fill="#78281F" fill-opacity="0.12"/>
+<text x="770" y="987" text-anchor="middle" font-size="9" fill="#78281F" font-family="Segoe UI,Arial" font-weight="600">STM — CTRL-002</text>
+<text x="657" y="996" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 SVJ_ID (PK)</text>
+<text x="657" y="1013" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 RFQ_ID → RFQ_Log</text>
+<text x="657" y="1028" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Vendor_Code → Vendor_Master</text>
+<text x="657" y="1043" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Consolidation_Cluster_ID → Consolidated_PRs</text>
+<line x1="656" y1="1055" x2="884" y2="1055" stroke="#CCC" stroke-width="0.5"/>
+<text x="659" y="1059" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Justification_Reason (mandatory)</text>
+<text x="659" y="1074" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Supporting_Doc_File_ID (DMS)</text>
+<text x="659" y="1089" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Approver_Email (Proc Head)</text>
+<text x="659" y="1104" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Approval_Status</text>
+<text x="659" y="1119" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Created_At | Decided_At</text>
+</g>
+<g class="entity-box" id="ent_RFQ_Dispatch_Log">
+<rect x="43" y="1213" width="250" height="178" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="40" y="1210" width="250" height="178" rx="8" fill="#F5EEF8" stroke="#4A235A" stroke-width="2"/>
+<rect x="40" y="1210" width="250" height="34" rx="8" fill="#4A235A"/>
+<rect x="40" y="1236" width="250" height="8" fill="#4A235A"/>
+<text x="165" y="1231" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">RFQ_Dispatch_Log</text>
+<rect x="44" y="1246" width="242" height="16" rx="4" fill="#4A235A" fill-opacity="0.12"/>
+<text x="165" y="1257" text-anchor="middle" font-size="9" fill="#4A235A" font-family="Segoe UI,Arial" font-weight="600">STM</text>
+<text x="47" y="1266" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Dispatch_ID (PK)</text>
+<text x="47" y="1283" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 RFQ_ID → RFQ_Log</text>
+<text x="47" y="1298" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Vendor_Code → Vendor_Master</text>
+<line x1="46" y1="1310" x2="284" y2="1310" stroke="#CCC" stroke-width="0.5"/>
+<text x="49" y="1314" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Vendor_Email | RFQ_Due_Date</text>
+<text x="49" y="1329" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Vendor_Response_Status</text>
+<text x="49" y="1344" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Dispatched_At</text>
+<text x="49" y="1359" font-size="9" fill="#333" font-family="Segoe UI,Arial">  First / Second Reminder_Sent_At</text>
+<text x="49" y="1374" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Submission_Received_At</text>
+</g>
+<g class="entity-box" id="ent_RFQ_Submissions">
+<rect x="353" y="1213" width="240" height="196" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="350" y="1210" width="240" height="196" rx="8" fill="#F5EEF8" stroke="#4A235A" stroke-width="2"/>
+<rect x="350" y="1210" width="240" height="34" rx="8" fill="#4A235A"/>
+<rect x="350" y="1236" width="240" height="8" fill="#4A235A"/>
+<text x="470" y="1231" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">RFQ_Submissions</text>
+<rect x="354" y="1246" width="232" height="16" rx="4" fill="#4A235A" fill-opacity="0.12"/>
+<text x="470" y="1257" text-anchor="middle" font-size="9" fill="#4A235A" font-family="Segoe UI,Arial" font-weight="600">STM</text>
+<text x="357" y="1266" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Submission_ID (PK)</text>
+<text x="357" y="1283" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 RFQ_ID → RFQ_Log</text>
+<text x="357" y="1298" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Vendor_Code → Vendor_Master</text>
+<text x="357" y="1313" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Dispatch_ID → RFQ_Dispatch_Log</text>
+<line x1="356" y1="1325" x2="584" y2="1325" stroke="#CCC" stroke-width="0.5"/>
+<text x="359" y="1329" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Submission_Has_Technical | _Commercial</text>
+<text x="359" y="1344" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Excel_File_ID | Docs_Folder_ID (DMS)</text>
+<text x="359" y="1359" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Tech_Eval_Status | Comm_Eval_Status</text>
+<text x="359" y="1374" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Overall_Eval_Status</text>
+<text x="359" y="1389" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Received_At → Overall_Eval_Completed_At</text>
+</g>
+<g class="entity-box" id="ent_RFQ_Tech_Evaluations">
+<rect x="43" y="1493" width="250" height="160" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="40" y="1490" width="250" height="160" rx="8" fill="#F5EEF8" stroke="#4A235A" stroke-width="2"/>
+<rect x="40" y="1490" width="250" height="34" rx="8" fill="#4A235A"/>
+<rect x="40" y="1516" width="250" height="8" fill="#4A235A"/>
+<text x="165" y="1511" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">RFQ_Tech_Evaluations</text>
+<rect x="44" y="1526" width="242" height="16" rx="4" fill="#4A235A" fill-opacity="0.12"/>
+<text x="165" y="1537" text-anchor="middle" font-size="9" fill="#4A235A" font-family="Segoe UI,Arial" font-weight="600">STM</text>
+<text x="47" y="1546" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Tech_Eval_ID (PK)</text>
+<text x="47" y="1563" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Submission_ID → RFQ_Submissions</text>
+<line x1="46" y1="1575" x2="284" y2="1575" stroke="#CCC" stroke-width="0.5"/>
+<text x="49" y="1579" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Vendor_Code</text>
+<text x="49" y="1594" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Conformance_Flag</text>
+<text x="49" y="1609" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Tech_Score (0–100)</text>
+<text x="49" y="1624" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Evaluator_Email</text>
+<text x="49" y="1639" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Evaluated_At</text>
+</g>
+<g class="entity-box" id="ent_RFQ_Comm_Evaluations">
+<rect x="353" y="1493" width="250" height="196" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="350" y="1490" width="250" height="196" rx="8" fill="#F5EEF8" stroke="#4A235A" stroke-width="2"/>
+<rect x="350" y="1490" width="250" height="34" rx="8" fill="#4A235A"/>
+<rect x="350" y="1516" width="250" height="8" fill="#4A235A"/>
+<text x="475" y="1511" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">RFQ_Comm_Evaluations</text>
+<rect x="354" y="1526" width="242" height="16" rx="4" fill="#4A235A" fill-opacity="0.12"/>
+<text x="475" y="1537" text-anchor="middle" font-size="9" fill="#4A235A" font-family="Segoe UI,Arial" font-weight="600">STM</text>
+<text x="357" y="1546" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Comm_Eval_ID (PK)</text>
+<text x="357" y="1563" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Submission_ID → RFQ_Submissions</text>
+<text x="357" y="1578" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Material_Code → Material_Master (LPP)</text>
+<line x1="356" y1="1590" x2="594" y2="1590" stroke="#CCC" stroke-width="0.5"/>
+<text x="359" y="1594" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Unit_Price | Payment_Term_Days</text>
+<text x="359" y="1609" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Requested_Delivery_Days</text>
+<text x="359" y="1624" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Incoterms_Offered</text>
+<text x="359" y="1639" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Price_Vs_LPP (CTRL-003)</text>
+<text x="359" y="1654" font-size="9" fill="#333" font-family="Segoe UI,Arial">  CTRL-004_Status</text>
+<text x="359" y="1669" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Comm_Score (0–100)</text>
+</g>
+<g class="entity-box" id="ent_RFQ_Overall_Evaluations">
+<rect x="43" y="1773" width="250" height="160" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="40" y="1770" width="250" height="160" rx="8" fill="#F5EEF8" stroke="#4A235A" stroke-width="2"/>
+<rect x="40" y="1770" width="250" height="34" rx="8" fill="#4A235A"/>
+<rect x="40" y="1796" width="250" height="8" fill="#4A235A"/>
+<text x="165" y="1791" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">RFQ_Overall_Evaluations</text>
+<rect x="44" y="1806" width="242" height="16" rx="4" fill="#4A235A" fill-opacity="0.12"/>
+<text x="165" y="1817" text-anchor="middle" font-size="9" fill="#4A235A" font-family="Segoe UI,Arial" font-weight="600">STM</text>
+<text x="47" y="1826" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Overall_Eval_ID (PK)</text>
+<text x="47" y="1843" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Submission_ID → RFQ_Submissions</text>
+<line x1="46" y1="1855" x2="284" y2="1855" stroke="#CCC" stroke-width="0.5"/>
+<text x="49" y="1859" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Tech_Score | Comm_Score</text>
+<text x="49" y="1874" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Overall_Score (weighted)</text>
+<text x="49" y="1889" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Rank (1 = recommended)</text>
+<text x="49" y="1904" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Recommendation</text>
+<text x="49" y="1919" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Completed_At</text>
+</g>
+<g class="entity-box" id="ent_Negotiation_Shortlist_Approval">
+<rect x="353" y="1773" width="250" height="124" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="350" y="1770" width="250" height="124" rx="8" fill="#F5EEF8" stroke="#4A235A" stroke-width="2"/>
+<rect x="350" y="1770" width="250" height="34" rx="8" fill="#4A235A"/>
+<rect x="350" y="1796" width="250" height="8" fill="#4A235A"/>
+<text x="475" y="1791" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">Negotiation_Shortlist_Approval</text>
+<rect x="354" y="1806" width="242" height="16" rx="4" fill="#4A235A" fill-opacity="0.12"/>
+<text x="475" y="1817" text-anchor="middle" font-size="9" fill="#4A235A" font-family="Segoe UI,Arial" font-weight="600">STM</text>
+<text x="357" y="1826" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Nego_Shortlist_ID (PK)</text>
+<text x="357" y="1843" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Submission_ID → RFQ_Overall_Evaluations</text>
+<line x1="356" y1="1855" x2="594" y2="1855" stroke="#CCC" stroke-width="0.5"/>
+<text x="359" y="1859" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Shortlisted_Flag</text>
+<text x="359" y="1874" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Buyer_Approval_Status</text>
+<text x="359" y="1889" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Decided_At</text>
+</g>
+<g class="entity-box" id="ent_Negotiation_Intelligence_Log">
+<rect x="43" y="2043" width="260" height="196" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="40" y="2040" width="260" height="196" rx="8" fill="#F5EEF8" stroke="#4A235A" stroke-width="2"/>
+<rect x="40" y="2040" width="260" height="34" rx="8" fill="#4A235A"/>
+<rect x="40" y="2066" width="260" height="8" fill="#4A235A"/>
+<text x="170" y="2061" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">Negotiation_Intelligence_Log</text>
+<rect x="44" y="2076" width="252" height="16" rx="4" fill="#4A235A" fill-opacity="0.12"/>
+<text x="170" y="2087" text-anchor="middle" font-size="9" fill="#4A235A" font-family="Segoe UI,Arial" font-weight="600">STM</text>
+<text x="47" y="2096" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Nego_Intel_ID (PK)</text>
+<text x="47" y="2113" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 RFQ_ID → RFQ_Log</text>
+<text x="47" y="2128" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Material_Code → Material_Master</text>
+<line x1="46" y1="2140" x2="294" y2="2140" stroke="#CCC" stroke-width="0.5"/>
+<text x="49" y="2144" font-size="9" fill="#333" font-family="Segoe UI,Arial">  LPP | Benchmark_Price</text>
+<text x="49" y="2159" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Market_Trend (AI research)</text>
+<text x="49" y="2174" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Target_Price</text>
+<text x="49" y="2189" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Negotiation Strategy</text>
+<text x="49" y="2204" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Category Brief (Kraljic)</text>
+<text x="49" y="2219" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Brief_File_ID (DMS)</text>
+</g>
+<g class="entity-box" id="ent_NFA_Log">
+<rect x="963" y="673" width="260" height="268" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="960" y="670" width="260" height="268" rx="8" fill="#F5EEF8" stroke="#4A235A" stroke-width="2"/>
+<rect x="960" y="670" width="260" height="34" rx="8" fill="#4A235A"/>
+<rect x="960" y="696" width="260" height="8" fill="#4A235A"/>
+<text x="1090" y="691" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">NFA_Log</text>
+<rect x="964" y="706" width="252" height="16" rx="4" fill="#4A235A" fill-opacity="0.12"/>
+<text x="1090" y="717" text-anchor="middle" font-size="9" fill="#4A235A" font-family="Segoe UI,Arial" font-weight="600">STM</text>
+<text x="967" y="726" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 NFA_ID (PK)</text>
+<text x="967" y="743" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Consolidation_Cluster_ID → Consolidated_PRs</text>
+<text x="967" y="758" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Recommended_Vendor_Code → Vendor_Master</text>
+<text x="967" y="773" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Last_Purchase_Price → Material_Master.LPP</text>
+<text x="967" y="788" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 SVJ_Reference → SVJ_Log</text>
+<line x1="966" y1="800" x2="1214" y2="800" stroke="#CCC" stroke-width="0.5"/>
+<text x="969" y="804" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Negotiated_Unit_Price</text>
+<text x="969" y="819" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Price_Vs_LPP_Status (CTRL-003)</text>
+<text x="969" y="834" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Price_Deviation_Pct | Savings_Vs_LPP_Pct</text>
+<text x="969" y="849" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Price_Justification (mandatory if above LPP)</text>
+<text x="969" y="864" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Comparison_Matrix_File_ID (DMS)</text>
+<text x="969" y="879" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Vendor_Count_In_RFQ (CTRL-001)</text>
+<text x="969" y="894" font-size="9" fill="#333" font-family="Segoe UI,Arial">  NFA_Status</text>
+<text x="969" y="909" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Raised_At | Approved_At</text>
+</g>
+<g class="entity-box" id="ent_NFA_Approval_Log">
+<rect x="963" y="943" width="250" height="160" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="960" y="940" width="250" height="160" rx="8" fill="#F5EEF8" stroke="#4A235A" stroke-width="2"/>
+<rect x="960" y="940" width="250" height="34" rx="8" fill="#4A235A"/>
+<rect x="960" y="966" width="250" height="8" fill="#4A235A"/>
+<text x="1085" y="961" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">NFA_Approval_Log</text>
+<rect x="964" y="976" width="242" height="16" rx="4" fill="#4A235A" fill-opacity="0.12"/>
+<text x="1085" y="987" text-anchor="middle" font-size="9" fill="#4A235A" font-family="Segoe UI,Arial" font-weight="600">STM</text>
+<text x="967" y="996" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 NFA_Approval_ID (PK)</text>
+<text x="967" y="1013" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 NFA_ID → NFA_Log</text>
+<text x="967" y="1028" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Approver_Email → Designations_Master</text>
+<line x1="966" y1="1040" x2="1204" y2="1040" stroke="#CCC" stroke-width="0.5"/>
+<text x="969" y="1044" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Tier_Level (DOP-driven)</text>
+<text x="969" y="1059" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Approval_Status</text>
+<text x="969" y="1074" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Requested_At | Decided_At</text>
+<text x="969" y="1089" font-size="9" fill="#333" font-family="Segoe UI,Arial">  CFO tier added if above LPP</text>
+</g>
+<g class="entity-box" id="ent_Compliance_Log">
+<rect x="963" y="1213" width="280" height="178" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="960" y="1210" width="280" height="178" rx="8" fill="#FDEDEC" stroke="#78281F" stroke-width="2"/>
+<rect x="960" y="1210" width="280" height="34" rx="8" fill="#78281F"/>
+<rect x="960" y="1236" width="280" height="8" fill="#78281F"/>
+<text x="1100" y="1231" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">Compliance_Log</text>
+<rect x="964" y="1246" width="272" height="16" rx="4" fill="#78281F" fill-opacity="0.12"/>
+<text x="1100" y="1257" text-anchor="middle" font-size="9" fill="#78281F" font-family="Segoe UI,Arial" font-weight="600">STM — AUDIT TRAIL (M:M)</text>
+<text x="967" y="1266" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 Log_ID (PK)</text>
+<text x="967" y="1283" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Control_ID = CTRL-001 to CTRL-018</text>
+<text x="967" y="1298" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  🔗 Entity_Reference (any entity ID)</text>
+<line x1="966" y1="1310" x2="1234" y2="1310" stroke="#CCC" stroke-width="0.5"/>
+<text x="969" y="1314" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Process_ID (S2C step)</text>
+<text x="969" y="1329" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Check_Result (Pass/Fail/Warning/Override)</text>
+<text x="969" y="1344" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Fail_Reason (if failed)</text>
+<text x="969" y="1359" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Override_By | Override_Justification</text>
+<text x="969" y="1374" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Checked_At</text>
+</g>
+<g class="entity-box" id="ent_DMS_Documents">
+<rect x="963" y="1493" width="280" height="196" rx="8" fill="rgba(0,0,0,0.15)"/>
+<rect x="960" y="1490" width="280" height="196" rx="8" fill="#FFFFF0" stroke="#7D6608" stroke-width="2"/>
+<rect x="960" y="1490" width="280" height="34" rx="8" fill="#7D6608"/>
+<rect x="960" y="1516" width="280" height="8" fill="#7D6608"/>
+<text x="1100" y="1511" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">DMS_Documents</text>
+<rect x="964" y="1526" width="272" height="16" rx="4" fill="#7D6608" fill-opacity="0.12"/>
+<text x="1100" y="1537" text-anchor="middle" font-size="9" fill="#7D6608" font-family="Segoe UI,Arial" font-weight="600">DMS — Meta Data</text>
+<text x="967" y="1546" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">🔑 File_ID / Folder_ID (PK)</text>
+<text x="969" y="1564" font-size="9" fill="#333" font-family="Segoe UI,Arial">  RFQ_Excel_File (.xlsx)</text>
+<text x="969" y="1579" font-size="9" fill="#333" font-family="Segoe UI,Arial">  T&C PDF (.pdf)</text>
+<text x="969" y="1594" font-size="9" fill="#333" font-family="Segoe UI,Arial">  PAN_Card_Image (.pdf)</text>
+<text x="969" y="1609" font-size="9" fill="#333" font-family="Segoe UI,Arial">  GST_Certificate (.pdf)</text>
+<text x="969" y="1624" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Validation_Report (.pdf)</text>
+<text x="969" y="1639" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Negotiation_Brief (.pdf)</text>
+<text x="969" y="1654" font-size="9" fill="#333" font-family="Segoe UI,Arial">  SVJ_Document (.pdf)</text>
+<text x="969" y="1669" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Comparison_Matrix (.xlsx)</text>
+</g>
+<g class="rel-line">
+<path d="M 160 287 Q 172.5 478.5 185 670" fill="none" stroke="#1565C0" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-blue)"/>
+<text x="172" y="470" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">Material_Code</text>
+<text x="172" y="482" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">1:M</text>
+</g>
+<g class="rel-line">
+<path d="M 455 251 Q 320.0 460.5 185 670" fill="none" stroke="#1565C0" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-blue)"/>
+<text x="320" y="452" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">Buyer_Email</text>
+<text x="320" y="464" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">1:M</text>
+</g>
+<g class="rel-line">
+<path d="M 1810 110 Q 1070.0 457.0 330 804" fill="none" stroke="#C0392B" stroke-width="1.5" stroke-dasharray="6,3" opacity="0.65" marker-end="url(#arr-red)"/>
+<text x="1070" y="449" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">From_UOM</text>
+<text x="1070" y="460" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">M:M</text>
+</g>
+<g class="rel-line">
+<path d="M 280 171 Q 1185.0 140.5 2090 110" fill="none" stroke="#1565C0" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-blue)"/>
+<text x="1185" y="132" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">Material_Code</text>
+<text x="1185" y="144" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">1:1</text>
+</g>
+<g class="rel-line">
+<path d="M 155 512 Q 170.0 591.0 185 670" fill="none" stroke="#1B5E20" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-gray)"/>
+<text x="170" y="583" text-anchor="middle" font-size="8.5" fill="#1B5E20" font-family="Segoe UI,Arial" opacity="0.9">PR_Number</text>
+<text x="170" y="594" text-anchor="middle" font-size="8.5" fill="#1B5E20" font-family="Segoe UI,Arial" opacity="0.9">M:1 (clustered)</text>
+</g>
+<g class="rel-line">
+<path d="M 330 804 Q 365.0 790.5 400 777" fill="none" stroke="#6C3483" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-purple)"/>
+<text x="365" y="782" text-anchor="middle" font-size="8.5" fill="#6C3483" font-family="Segoe UI,Arial" opacity="0.9">Cluster_ID</text>
+<text x="365" y="794" text-anchor="middle" font-size="8.5" fill="#6C3483" font-family="Segoe UI,Arial" opacity="0.9">1:M</text>
+</g>
+<g class="rel-line">
+<path d="M 330 804 Q 515.0 777.0 700 750" fill="none" stroke="#6C3483" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-purple)"/>
+<text x="515" y="769" text-anchor="middle" font-size="8.5" fill="#6C3483" font-family="Segoe UI,Arial" opacity="0.9">Cluster_ID</text>
+<text x="515" y="780" text-anchor="middle" font-size="8.5" fill="#6C3483" font-family="Segoe UI,Arial" opacity="0.9">1:M</text>
+</g>
+<g class="rel-line">
+<path d="M 185 938 Q 175.0 939.0 165 940" fill="none" stroke="#6C3483" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-purple)"/>
+<text x="175" y="931" text-anchor="middle" font-size="8.5" fill="#6C3483" font-family="Segoe UI,Arial" opacity="0.9">Cluster_ID</text>
+<text x="175" y="942" text-anchor="middle" font-size="8.5" fill="#6C3483" font-family="Segoe UI,Arial" opacity="0.9">M:1</text>
+</g>
+<g class="rel-line">
+<path d="M 330 804 Q 645.0 804.0 960 804" fill="none" stroke="#27AE60" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-green)"/>
+<text x="645" y="796" text-anchor="middle" font-size="8.5" fill="#27AE60" font-family="Segoe UI,Arial" opacity="0.9">Cluster_ID</text>
+<text x="645" y="807" text-anchor="middle" font-size="8.5" fill="#27AE60" font-family="Segoe UI,Arial" opacity="0.9">1:1</text>
+</g>
+<g class="rel-line">
+<path d="M 745 197 Q 632.5 433.5 520 670" fill="none" stroke="#1565C0" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-blue)"/>
+<text x="632" y="426" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">Vendor_Code</text>
+<text x="632" y="436" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">1:M</text>
+</g>
+<g class="rel-line">
+<path d="M 1040 233 Q 780.0 451.5 520 670" fill="none" stroke="#1565C0" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-blue)"/>
+<text x="780" y="444" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">Vendor_Code=Supplier_Code</text>
+<text x="780" y="454" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">Perf gate CTRL-014</text>
+</g>
+<g class="rel-line">
+<path d="M 760 530 Q 640.0 600.0 520 670" fill="none" stroke="#C0392B" stroke-width="1.5" stroke-dasharray="6,3" opacity="0.65" marker-end="url(#arr-red)"/>
+<text x="640" y="592" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">Vendor_Code</text>
+<text x="640" y="603" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">M:M scoring</text>
+</g>
+<g class="rel-line">
+<path d="M 700 750 Q 495.0 885.0 290 1020" fill="none" stroke="#6C3483" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-purple)"/>
+<text x="495" y="877" text-anchor="middle" font-size="8.5" fill="#6C3483" font-family="Segoe UI,Arial" opacity="0.9">Cluster_ID</text>
+<text x="495" y="888" text-anchor="middle" font-size="8.5" fill="#6C3483" font-family="Segoe UI,Arial" opacity="0.9">M:1 embedded</text>
+</g>
+<g class="rel-line">
+<path d="M 290 1020 Q 320.0 1024.5 350 1029" fill="none" stroke="#6C3483" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-purple)"/>
+<text x="320" y="1016" text-anchor="middle" font-size="8.5" fill="#6C3483" font-family="Segoe UI,Arial" opacity="0.9">RFQ_ID</text>
+<text x="320" y="1028" text-anchor="middle" font-size="8.5" fill="#6C3483" font-family="Segoe UI,Arial" opacity="0.9">1:M (multi-tier)</text>
+</g>
+<g class="rel-line">
+<path d="M 290 1020 Q 470.0 1029.0 650 1038" fill="none" stroke="#C0392B" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-red)"/>
+<text x="470" y="1021" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">RFQ_ID</text>
+<text x="470" y="1032" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">1:0..1</text>
+</g>
+<g class="rel-line">
+<path d="M 455 494 Q 462.5 717.0 470 940" fill="none" stroke="#C0392B" stroke-width="1.5" stroke-dasharray="6,3" opacity="0.65" marker-end="url(#arr-red)"/>
+<text x="462" y="709" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">Value→Tier_Level</text>
+<text x="462" y="720" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">M:M</text>
+</g>
+<g class="rel-line">
+<path d="M 1520 110 Q 1055.0 569.5 590 1029" fill="none" stroke="#1565C0" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-blue)"/>
+<text x="1055" y="562" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">Designation_Code</text>
+<text x="1055" y="572" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">1:M</text>
+</g>
+<g class="rel-line">
+<path d="M 455 251 Q 462.5 595.5 470 940" fill="none" stroke="#1565C0" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-blue)"/>
+<text x="462" y="588" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">Buyer_Email</text>
+<text x="462" y="598" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">1:M approver link</text>
+</g>
+<g class="rel-line">
+<path d="M 165 1100 Q 165.0 1155.0 165 1210" fill="none" stroke="#6C3483" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-purple)"/>
+<text x="165" y="1147" text-anchor="middle" font-size="8.5" fill="#6C3483" font-family="Segoe UI,Arial" opacity="0.9">RFQ_ID</text>
+<text x="165" y="1158" text-anchor="middle" font-size="8.5" fill="#6C3483" font-family="Segoe UI,Arial" opacity="0.9">1:M (per vendor)</text>
+</g>
+<g class="rel-line">
+<path d="M 745 197 Q 455.0 703.5 165 1210" fill="none" stroke="#1565C0" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-blue)"/>
+<text x="455" y="696" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">Vendor_Code</text>
+<text x="455" y="706" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">1:M</text>
+</g>
+<g class="rel-line">
+<path d="M 290 1299 Q 320.0 1303.5 350 1308" fill="none" stroke="#27AE60" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-green)"/>
+<text x="320" y="1296" text-anchor="middle" font-size="8.5" fill="#27AE60" font-family="Segoe UI,Arial" opacity="0.9">Dispatch_ID</text>
+<text x="320" y="1306" text-anchor="middle" font-size="8.5" fill="#27AE60" font-family="Segoe UI,Arial" opacity="0.9">1:0..1</text>
+</g>
+<g class="rel-line">
+<path d="M 350 1308 Q 320.0 1439.0 290 1570" fill="none" stroke="#27AE60" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-green)"/>
+<text x="320" y="1431" text-anchor="middle" font-size="8.5" fill="#27AE60" font-family="Segoe UI,Arial" opacity="0.9">Submission_ID</text>
+<text x="320" y="1442" text-anchor="middle" font-size="8.5" fill="#27AE60" font-family="Segoe UI,Arial" opacity="0.9">1:1</text>
+</g>
+<g class="rel-line">
+<path d="M 470 1406 Q 472.5 1448.0 475 1490" fill="none" stroke="#27AE60" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-green)"/>
+<text x="472" y="1440" text-anchor="middle" font-size="8.5" fill="#27AE60" font-family="Segoe UI,Arial" opacity="0.9">Submission_ID</text>
+<text x="472" y="1451" text-anchor="middle" font-size="8.5" fill="#27AE60" font-family="Segoe UI,Arial" opacity="0.9">1:1</text>
+</g>
+<g class="rel-line">
+<path d="M 160 287 Q 317.5 888.5 475 1490" fill="none" stroke="#1565C0" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-blue)"/>
+<text x="318" y="880" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">Material_Code</text>
+<text x="318" y="892" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">LPP benchmark</text>
+</g>
+<g class="rel-line">
+<path d="M 165 1650 Q 165.0 1710.0 165 1770" fill="none" stroke="#27AE60" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-green)"/>
+<text x="165" y="1702" text-anchor="middle" font-size="8.5" fill="#27AE60" font-family="Segoe UI,Arial" opacity="0.9">Submission_ID</text>
+<text x="165" y="1713" text-anchor="middle" font-size="8.5" fill="#27AE60" font-family="Segoe UI,Arial" opacity="0.9">1:1</text>
+</g>
+<g class="rel-line">
+<path d="M 350 1588 Q 320.0 1719.0 290 1850" fill="none" stroke="#27AE60" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-green)"/>
+<text x="320" y="1711" text-anchor="middle" font-size="8.5" fill="#27AE60" font-family="Segoe UI,Arial" opacity="0.9">Submission_ID</text>
+<text x="320" y="1722" text-anchor="middle" font-size="8.5" fill="#27AE60" font-family="Segoe UI,Arial" opacity="0.9">1:1</text>
+</g>
+<g class="rel-line">
+<path d="M 290 1850 Q 320.0 1841.0 350 1832" fill="none" stroke="#27AE60" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-green)"/>
+<text x="320" y="1833" text-anchor="middle" font-size="8.5" fill="#27AE60" font-family="Segoe UI,Arial" opacity="0.9">Submission_ID</text>
+<text x="320" y="1844" text-anchor="middle" font-size="8.5" fill="#27AE60" font-family="Segoe UI,Arial" opacity="0.9">1:1</text>
+</g>
+<g class="rel-line">
+<path d="M 165 1930 Q 167.5 1985.0 170 2040" fill="none" stroke="#6C3483" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-purple)"/>
+<text x="168" y="1977" text-anchor="middle" font-size="8.5" fill="#6C3483" font-family="Segoe UI,Arial" opacity="0.9">RFQ_ID</text>
+<text x="168" y="1988" text-anchor="middle" font-size="8.5" fill="#6C3483" font-family="Segoe UI,Arial" opacity="0.9">M:1</text>
+</g>
+<g class="rel-line">
+<path d="M 760 530 Q 465.0 1285.0 170 2040" fill="none" stroke="#C0392B" stroke-width="1.5" stroke-dasharray="6,3" opacity="0.65" marker-end="url(#arr-red)"/>
+<text x="465" y="1277" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">Vendor_Code</text>
+<text x="465" y="1288" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">M:M</text>
+</g>
+<g class="rel-line">
+<path d="M 160 287 Q 165.0 1163.5 170 2040" fill="none" stroke="#C0392B" stroke-width="1.5" stroke-dasharray="6,3" opacity="0.65" marker-end="url(#arr-red)"/>
+<text x="165" y="1156" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">Material_Code</text>
+<text x="165" y="1166" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">benchmark M:M</text>
+</g>
+<g class="rel-line">
+<path d="M 280 171 Q 620.0 487.5 960 804" fill="none" stroke="#1565C0" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-blue)"/>
+<text x="620" y="480" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">LPP → CTRL-003</text>
+<text x="620" y="490" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">1:1 per material</text>
+</g>
+<g class="rel-line">
+<path d="M 960 804 Q 925.0 921.0 890 1038" fill="none" stroke="#C0392B" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-red)"/>
+<text x="925" y="913" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">SVJ_Reference</text>
+<text x="925" y="924" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">1:0..1</text>
+</g>
+<g class="rel-line">
+<path d="M 1090 938 Q 1087.5 939.0 1085 940" fill="none" stroke="#6C3483" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-purple)"/>
+<text x="1088" y="931" text-anchor="middle" font-size="8.5" fill="#6C3483" font-family="Segoe UI,Arial" opacity="0.9">NFA_ID</text>
+<text x="1088" y="942" text-anchor="middle" font-size="8.5" fill="#6C3483" font-family="Segoe UI,Arial" opacity="0.9">1:M (multi-tier)</text>
+</g>
+<g class="rel-line">
+<path d="M 1635 165 Q 1360.0 552.5 1085 940" fill="none" stroke="#1565C0" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-blue)"/>
+<text x="1360" y="544" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">Designation_Code</text>
+<text x="1360" y="556" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">1:M</text>
+</g>
+<g class="rel-line">
+<path d="M 1220 144 Q 1040.0 135.0 860 126" fill="none" stroke="#27AE60" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-green)"/>
+<text x="1040" y="127" text-anchor="middle" font-size="8.5" fill="#27AE60" font-family="Segoe UI,Arial" opacity="0.9">Vendor_Code</text>
+<text x="1040" y="138" text-anchor="middle" font-size="8.5" fill="#27AE60" font-family="Segoe UI,Arial" opacity="0.9">1:1 CTRL-008</text>
+</g>
+<g class="rel-line">
+<path d="M 860 126 Q 890.0 135.0 920 144" fill="none" stroke="#27AE60" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-green)"/>
+<text x="890" y="127" text-anchor="middle" font-size="8.5" fill="#27AE60" font-family="Segoe UI,Arial" opacity="0.9">Vendor_Code=Supplier_Code</text>
+<text x="890" y="138" text-anchor="middle" font-size="8.5" fill="#27AE60" font-family="Segoe UI,Arial" opacity="0.9">1:1</text>
+</g>
+<g class="rel-line">
+<path d="M 1040 233 Q 1050.0 301.5 1060 370" fill="none" stroke="#1565C0" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-blue)"/>
+<text x="1050" y="294" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">Supplier_Code</text>
+<text x="1050" y="304" text-anchor="middle" font-size="8.5" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.9">1:M</text>
+</g>
+<g class="rel-line">
+<path d="M 960 1299 Q 645.0 1051.5 330 804" fill="none" stroke="#C0392B" stroke-width="1.5" stroke-dasharray="6,3" opacity="0.65" marker-end="url(#arr-red)"/>
+<text x="645" y="1044" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">M:M audit trail</text>
+<text x="645" y="1054" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">CTRL-001 to CTRL-018</text>
+</g>
+<g class="rel-line">
+<path d="M 1100 1210 Q 1095.0 1074.0 1090 938" fill="none" stroke="#C0392B" stroke-width="1.5" stroke-dasharray="6,3" opacity="0.65" marker-end="url(#arr-red)"/>
+<text x="1095" y="1066" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">M:M audit</text>
+<text x="1095" y="1077" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">CTRL-003,015,018</text>
+</g>
+<g class="rel-line">
+<path d="M 960 1299 Q 625.0 1159.5 290 1020" fill="none" stroke="#C0392B" stroke-width="1.5" stroke-dasharray="6,3" opacity="0.65" marker-end="url(#arr-red)"/>
+<text x="625" y="1152" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">M:M audit</text>
+<text x="625" y="1162" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">CTRL-001,002,005</text>
+</g>
+<g class="rel-line">
+<path d="M 1360 512 Q 765.0 1276.0 170 2040" fill="none" stroke="#C0392B" stroke-width="1.5" stroke-dasharray="6,3" opacity="0.65" marker-end="url(#arr-red)"/>
+<text x="765" y="1268" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">Material_Code</text>
+<text x="765" y="1279" text-anchor="middle" font-size="8.5" fill="#C0392B" font-family="Segoe UI,Arial" opacity="0.9">Ceiling price</text>
+</g>
+<g class="rel-line">
+<path d="M 1100 1490 Q 1095.0 1214.0 1090 938" fill="none" stroke="#7D6608" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-gray)"/>
+<text x="1095" y="1206" text-anchor="middle" font-size="8.5" fill="#7D6608" font-family="Segoe UI,Arial" opacity="0.9">Comparison_Matrix_File_ID</text>
+</g>
+<g class="rel-line">
+<path d="M 1100 1490 Q 935.0 1313.0 770 1136" fill="none" stroke="#7D6608" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-gray)"/>
+<text x="935" y="1305" text-anchor="middle" font-size="8.5" fill="#7D6608" font-family="Segoe UI,Arial" opacity="0.9">Supporting_Doc_File_ID</text>
+</g>
+<g class="rel-line">
+<path d="M 960 1588 Q 625.0 1304.0 290 1020" fill="none" stroke="#7D6608" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-gray)"/>
+<text x="625" y="1296" text-anchor="middle" font-size="8.5" fill="#7D6608" font-family="Segoe UI,Arial" opacity="0.9">RFQ_Excel_File_ID</text>
+</g>
+<g class="rel-line">
+<path d="M 960 1588 Q 775.0 1448.0 590 1308" fill="none" stroke="#7D6608" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-gray)"/>
+<text x="775" y="1440" text-anchor="middle" font-size="8.5" fill="#7D6608" font-family="Segoe UI,Arial" opacity="0.9">Excel_File_ID</text>
+</g>
+<g class="rel-line">
+<path d="M 1100 1490 Q 1220.0 861.5 1340 233" fill="none" stroke="#7D6608" stroke-width="1.5"  opacity="0.65" marker-end="url(#arr-gray)"/>
+<text x="1220" y="854" text-anchor="middle" font-size="8.5" fill="#7D6608" font-family="Segoe UI,Arial" opacity="0.9">KYC docs</text>
+</g>
+<text x="660" y="1488" font-size="11" font-weight="bold" fill="#4A235A" font-family="Segoe UI,Arial" opacity="0.7">Evaluation Chain →</text>
+<text x="660" y="2038" font-size="11" font-weight="bold" fill="#4A235A" font-family="Segoe UI,Arial" opacity="0.7">Negotiation Intelligence</text>
+<text x="900" y="940" font-size="11" font-weight="bold" fill="#4A235A" font-family="Segoe UI,Arial" opacity="0.7">NFA &amp; Approval Chain →</text>
+<text x="900" y="1208" font-size="11" font-weight="bold" fill="#78281F" font-family="Segoe UI,Arial" opacity="0.7">Compliance &amp; Audit Log (M:M)</text>
+<text x="900" y="1488" font-size="11" font-weight="bold" fill="#7D6608" font-family="Segoe UI,Arial" opacity="0.8">DMS — Document Meta Data</text>
+<text x="900" y="1208" font-size="11" font-weight="bold" fill="#4A235A" font-family="Segoe UI,Arial" opacity="0.7">PO Creation Zone (S2C.PO.19)</text>
+
+<!-- PO_Reference: STM lightweight tracker (9 fields) -->
+<g class="entity-box" id="ent_PO_Reference">
+  <rect x="963" y="1213" width="277" height="3" rx="0" fill="rgba(0,0,0,0.15)"/>
+  <rect x="960" y="1210" width="277" height="225" rx="8" fill="#F5EEF8" stroke="#4A235A" stroke-width="2"/>
+  <rect x="960" y="1210" width="277" height="34" rx="8" fill="#4A235A"/>
+  <rect x="960" y="1236" width="277" height="8" fill="#4A235A"/>
+  <text x="1098" y="1231" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">PO_Reference</text>
+  <rect x="964" y="1246" width="269" height="16" rx="4" fill="#4A235A" fill-opacity="0.12"/>
+  <text x="1098" y="1257" text-anchor="middle" font-size="9" fill="#4A235A" font-family="Segoe UI,Arial" font-weight="600">STM -- BAPI call tracker (S2C owns)</text>
+  <text x="967" y="1277" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">&#128273; PO_Ref_ID (PK)</text>
+  <text x="967" y="1293" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  &#128279; NFA_ID -&gt; NFA_Log</text>
+  <text x="967" y="1308" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  &#128279; Cluster_ID -&gt; Consolidated_PRs</text>
+  <text x="967" y="1323" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  &#128279; SAP_PO_Number -&gt; SAP_PO_Data</text>
+  <text x="967" y="1338" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  &#128279; PO_Document_File_ID -&gt; DMS_Documents</text>
+  <line x1="966" y1="1342" x2="1231" y2="1342" stroke="#CCC" stroke-width="0.5"/>
+  <text x="969" y="1356" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Vendor_Acknowledged_At</text>
+  <text x="969" y="1371" font-size="9" fill="#333" font-family="Segoe UI,Arial">  API_Call_Status (BAPI_PO_CREATE1)</text>
+  <text x="969" y="1386" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Created_By | Created_At</text>
+  <!-- Step badge -->
+  <rect x="1130" y="1215" width="100" height="18" rx="6" fill="#27AE60"/>
+  <text x="1180" y="1227" text-anchor="middle" font-size="8" fill="white" font-family="Segoe UI,Arial" font-weight="bold">S2C.PO.19 NEW</text>
+</g>
+
+<!-- SAP_PO_Data: ERP-owned PO record (EKKO/EKPO, 21 fields) -->
+<g class="entity-box" id="ent_SAP_PO_Data">
+  <rect x="1323" y="1213" width="280" height="3" rx="0" fill="rgba(0,0,0,0.15)"/>
+  <rect x="1320" y="1210" width="280" height="320" rx="8" fill="#EBF5EB" stroke="#1B5E20" stroke-width="2"/>
+  <rect x="1320" y="1210" width="280" height="34" rx="8" fill="#1B5E20"/>
+  <rect x="1320" y="1236" width="280" height="8" fill="#1B5E20"/>
+  <text x="1460" y="1231" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="Segoe UI,Arial">SAP_PO_Data</text>
+  <rect x="1324" y="1246" width="272" height="16" rx="4" fill="#1B5E20" fill-opacity="0.12"/>
+  <text x="1460" y="1257" text-anchor="middle" font-size="9" fill="#1B5E20" font-family="Segoe UI,Arial" font-weight="600">ERP (SAP MM) -- EKKO / EKPO -- Read-Only from S2C</text>
+  <text x="1327" y="1277" font-size="10" font-weight="bold" fill="#C0392B" font-family="Segoe UI,Arial">&#128273; SAP_PO_Number (PK, EKKO.EBELN)</text>
+  <text x="1327" y="1293" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  &#128279; Vendor_Code (EKKO.LIFNR) -&gt; Vendor_Master</text>
+  <text x="1327" y="1308" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  &#128279; Material_Code (EKPO.MATNR) -&gt; Material_Master</text>
+  <text x="1327" y="1323" font-size="9" fill="#1A5276" font-family="Segoe UI,Arial">  &#128279; Plant (EKPO.WERKS)</text>
+  <line x1="1326" y1="1327" x2="1594" y2="1327" stroke="#CCC" stroke-width="0.5"/>
+  <text x="1329" y="1342" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Unit_Price (EKPO.NETPR) | Qty (EKPO.MENGE)</text>
+  <text x="1329" y="1357" font-size="9" fill="#333" font-family="Segoe UI,Arial">  PO_Net_Value (EKKO.NETWR, INR)</text>
+  <text x="1329" y="1372" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Delivery_Date (EKPO.EINDT)</text>
+  <text x="1329" y="1387" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Payment_Terms (EKKO.ZTERM) | Incoterms (EKKO.INCO1)</text>
+  <text x="1329" y="1402" font-size="9" fill="#333" font-family="Segoe UI,Arial">  PO_Status (Open / Partial / Closed)</text>
+  <text x="1329" y="1417" font-size="9" fill="#333" font-family="Segoe UI,Arial">  GRN_Number (MSEG.MBLNR)</text>
+  <text x="1329" y="1432" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Invoice_Number (RBKP.BELNR)</text>
+  <text x="1329" y="1447" font-size="9" fill="#333" font-family="Segoe UI,Arial">  Payment_Status (FI-AP) | SAP_Created_At</text>
+  <!-- ERP badge -->
+  <rect x="1490" y="1215" width="105" height="18" rx="6" fill="#1B5E20"/>
+  <text x="1542" y="1227" text-anchor="middle" font-size="8" fill="white" font-family="Segoe UI,Arial" font-weight="bold">SAP ERP -- EKKO/EKPO</text>
+</g>
+
+<!-- Rel 39: NFA_Log(bottom 1090,938) -> PO_Reference(top 1098,1210) 1:1 -->
+<g class="rel-line">
+  <path d="M 1090 938 Q 1090 1074 1098 1210" fill="none" stroke="#27AE60" stroke-width="2" marker-end="url(#arr-green)"/>
+  <text x="1100" y="1050" font-size="8.5" fill="#27AE60" font-family="Segoe UI,Arial">NFA_ID 1:1</text>
+  <text x="1100" y="1062" font-size="8.5" fill="#27AE60" font-family="Segoe UI,Arial">BAPI trigger</text>
+</g>
+
+<!-- Rel 40: PO_Reference(right 1237,1322) -> SAP_PO_Data(left 1320,1322) 1:1 -->
+<g class="rel-line">
+  <path d="M 1237 1322 L 1320 1322" fill="none" stroke="#1B5E20" stroke-width="2" marker-end="url(#arr-green)"/>
+  <text x="1244" y="1316" font-size="8.5" fill="#1B5E20" font-family="Segoe UI,Arial">SAP_PO_Number 1:1</text>
+  <text x="1244" y="1327" font-size="8.5" fill="#1B5E20" font-family="Segoe UI,Arial">BAPI_PO_CREATE1</text>
+</g>
+
+<!-- Rel 41: SAP_PO_Data(top 1460,1210) -> Vendor_Master(~1040,89) M:1 -->
+<g class="rel-line">
+  <path d="M 1460 1210 Q 1360 650 1040 89" fill="none" stroke="#1565C0" stroke-width="1.2" stroke-dasharray="4,2" opacity="0.55" marker-end="url(#arr-blue)"/>
+  <text x="1380" y="650" font-size="8" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.8">Vendor_Code M:1</text>
+</g>
+
+<!-- Rel 42: SAP_PO_Data(top 1350,1210) -> Material_Master(~160,270) M:1 -->
+<g class="rel-line">
+  <path d="M 1350 1210 Q 780 700 160 270" fill="none" stroke="#1565C0" stroke-width="1.2" stroke-dasharray="4,2" opacity="0.5" marker-end="url(#arr-blue)"/>
+  <text x="790" y="694" font-size="8" fill="#1565C0" font-family="Segoe UI,Arial" opacity="0.8">Material_Code M:1</text>
+</g>
+
+<!-- Rel 43: Consolidated_PRs(bottom 185,938) -> PO_Reference(left 960,1322) 1:1 -->
+<g class="rel-line">
+  <path d="M 185 938 Q 572 1130 960 1322" fill="none" stroke="#6C3483" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.65" marker-end="url(#arr-purple)"/>
+  <text x="505" y="1090" font-size="8.5" fill="#6C3483" font-family="Segoe UI,Arial" opacity="0.9">Cluster_ID 1:1</text>
+</g>
+
+<!-- Rel 44: DMS_Documents(top 1100,1490) -> PO_Reference(bottom 1098,1435) 1:M -->
+<g class="rel-line">
+  <path d="M 1100 1490 L 1098 1435" fill="none" stroke="#7D6608" stroke-width="1.5" stroke-dasharray="4,2" opacity="0.7" marker-end="url(#arr-gray)"/>
+  <text x="1108" y="1478" font-size="8.5" fill="#7D6608" font-family="Segoe UI,Arial">PO_Doc_File_ID 1:M</text>
+</g>
+
+<!-- Process note -->
+<g>
+  <rect x="1320" y="1560" width="295" height="72" rx="8" fill="#1B5E20" fill-opacity="0.07" stroke="#1B5E20" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="1467" y="1578" text-anchor="middle" font-size="10" font-weight="bold" fill="#1B5E20" font-family="Segoe UI,Arial">S2C.PO.19 -- PO Creation &amp; Release</text>
+  <text x="1467" y="1595" text-anchor="middle" font-size="9" fill="#1B5E20" font-family="Segoe UI,Arial">n8n calls BAPI_PO_CREATE1 -&gt; SAP creates PO</text>
+  <text x="1467" y="1610" text-anchor="middle" font-size="8.5" fill="#555" font-family="Segoe UI,Arial" font-style="italic">SAP ERP owns PO data -- S2C stores reference only</text>
+  <text x="1467" y="1622" text-anchor="middle" font-size="8.5" fill="#555" font-family="Segoe UI,Arial" font-style="italic">Trigger: NFA_Status = Approved</text>
+</g>
+
+  </svg>
+</div>
+<script>
+let scale = 1, tx = 0, ty = 0;
+let dragging = false, lastX = 0, lastY = 0;
+const wrap = document.getElementById('canvas-wrap');
+const svg  = document.getElementById('main-svg');
+
+function applyTransform() {
+  svg.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`;
+  svg.style.transformOrigin = '0 0';
+}
+function resetView() { scale=0.75; tx=0; ty=0; applyTransform(); }
+function zoomIn()  { scale=Math.min(scale*1.2,4); applyTransform(); }
+function zoomOut() { scale=Math.max(scale/1.2,0.2); applyTransform(); }
+
+wrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.1 : 0.9;
+  scale = Math.min(Math.max(scale*factor,0.2),4);
+  applyTransform();
+}, {passive:false});
+
+wrap.addEventListener('mousedown', e => { dragging=true; lastX=e.clientX; lastY=e.clientY; });
+document.addEventListener('mouseup', () => dragging=false);
+document.addEventListener('mousemove', e => {
+  if(!dragging) return;
+  tx += e.clientX - lastX; ty += e.clientY - lastY;
+  lastX=e.clientX; lastY=e.clientY;
+  applyTransform();
+});
+
+// Initial view
+resetView();
+</script>
+</body>
+</html>

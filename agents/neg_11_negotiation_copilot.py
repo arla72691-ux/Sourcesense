@@ -52,10 +52,16 @@ def negotiation_copilot(state: S2CState) -> S2CState:
                                   WHERE r.RFQ_ID = ?""", (rfq_id,))
                 cluster = cursor.fetchone()
 
+                # Fetch LPP for this material+plant from LPP_Master
+                cursor.execute("SELECT Last_Purchase_Price FROM LPP_Master WHERE Material_Code = ? AND Plant = ?",
+                               (cluster['Material_Code'], cluster['Plant']))
+                lpp_row = cursor.fetchone()
+                lpp = lpp_row['Last_Purchase_Price'] if lpp_row else None
+
                 # Low Value Auto-Negotiation Check
                 if cluster['Total_Value'] < 100000:
                     logging.info(f"RFQ {rfq_id} is low value ({cluster['Total_Value']}). Attempting auto-negotiation.")
-                    lpp = cluster['Last_Purchase_Price'] or top_vendor['Quoted_Unit_Price']
+                    lpp = lpp or top_vendor['Quoted_Unit_Price']
                     best_quote = top_vendor['Quoted_Unit_Price']
                     auto_accepted_price = None
                     if best_quote <= lpp:
@@ -79,11 +85,11 @@ def negotiation_copilot(state: S2CState) -> S2CState:
                 # Dummy data for prompt placeholders not easily queryable
                 prompt_data = {
                     'material_description': cluster['Description'], 'quantity': cluster['Quantity'], 'uom': cluster['UOM_Base'],
-                    'material_group': cluster['Material_Group'], 'lpp': cluster['Last_Purchase_Price'] or 0,
+                    'material_group': cluster['Material_Group'], 'lpp': lpp or 0,
                     'best_quote': top_vendor['Quoted_Unit_Price'], 'best_vendor': top_vendor['Vendor_Name'],
                     'batna_price': batna_price[0] if batna_price else (top_vendor['Quoted_Unit_Price'] * 1.1), 'batna_vendor': 'Competitor',
-                    'price_trend': 'Stable', 'avg_price': (cluster['Last_Purchase_Price'] or top_vendor['Quoted_Unit_Price']), 'min_price': (cluster['Last_Purchase_Price'] or top_vendor['Quoted_Unit_Price']) * 0.9,
-                    'vendor_name': top_vendor['Vendor_Name'], 'total_pos': 5, 'last_po_price': (cluster['Last_Purchase_Price'] or 0), 'quality_rating': 4.5,
+                    'price_trend': 'Stable', 'avg_price': (lpp or top_vendor['Quoted_Unit_Price']), 'min_price': (lpp or top_vendor['Quoted_Unit_Price']) * 0.9,
+                    'vendor_name': top_vendor['Vendor_Name'], 'total_pos': 5, 'last_po_price': (lpp or 0), 'quality_rating': 4.5,
                     'delivery_pct': 98, 'quality_incidents': 1, 'annual_spend': 5000000, 'vendor_share': 15
                 }
 

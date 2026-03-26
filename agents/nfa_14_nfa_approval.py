@@ -17,15 +17,18 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 def handle_approval_response(db_path, nfa_id, tier, decision):
     with get_db(db_path) as conn:
         cursor = conn.cursor()
-        cursor.execute("UPDATE NFA_Approval_Log SET Decision = ?, Decided_At = ? WHERE NFA_ID = ? AND Tier_Level = ?",
+        cursor.execute("""UPDATE Approval_Log SET Decision = ?, Decided_At = ?
+                          WHERE Entity_Type = 'NFA' AND Entity_ID = ? AND Tier_Level = ?""",
                        (decision, datetime.datetime.now().isoformat(), nfa_id, tier))
         if decision == 'Rejected':
             cursor.execute("UPDATE NFA_Log SET NFA_Status = 'Rejected' WHERE NFA_ID = ?", (nfa_id,))
             # Notify buyer, etc.
             return False # Stop chain
-        
+
         # Check if more tiers are pending
-        cursor.execute("SELECT Tier_Level FROM NFA_Approval_Log WHERE NFA_ID = ? AND Decision = 'Pending' ORDER BY Tier_Level ASC", (nfa_id,))
+        cursor.execute("""SELECT Tier_Level FROM Approval_Log
+                          WHERE Entity_Type = 'NFA' AND Entity_ID = ? AND Decision = 'Pending'
+                          ORDER BY Tier_Level ASC""", (nfa_id,))
         next_tier = cursor.fetchone()
         if next_tier:
             # Trigger email to next tier (omitted for sim)
@@ -45,7 +48,9 @@ def simulate_nfa_approval(db_path, nfa_id):
     while more_tiers:
         with get_db(db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT Tier_Level FROM NFA_Approval_Log WHERE NFA_ID = ? AND Decision = 'Pending' ORDER BY Tier_Level ASC LIMIT 1", (nfa_id,))
+            cursor.execute("""SELECT Tier_Level FROM Approval_Log
+                              WHERE Entity_Type = 'NFA' AND Entity_ID = ? AND Decision = 'Pending'
+                              ORDER BY Tier_Level ASC LIMIT 1""", (nfa_id,))
             pending_tier = cursor.fetchone()
             if pending_tier:
                 more_tiers = handle_approval_response(db_path, nfa_id, pending_tier['Tier_Level'], 'Approved')
@@ -87,10 +92,17 @@ def nfa_approval(state: S2CState) -> S2CState:
 
                 if not approval_chain: continue
 
-                # Insert all pending approvals
+                # Insert all pending approvals into the unified Approval_Log
+                c2 = conn.cursor()
+                c2.execute("SELECT MAX(CAST(SUBSTR(Approval_ID,6) AS INTEGER)) FROM Approval_Log")
+                appr_seq = (c2.fetchone()[0] or 0) + 1
                 for tier in approval_chain:
-                    cursor.execute("INSERT INTO NFA_Approval_Log (NFA_ID, Tier_Level, Approver_Designation, Decision) VALUES (?, ?, ?, 'Pending')",
-                                   (nfa_id, tier['Tier_Level'], tier['Approver_Designation']))
+                    cursor.execute("""INSERT INTO Approval_Log
+                                      (Approval_ID, Entity_Type, Entity_ID, Approver_Designation, Decision, Tier_Level)
+                                      VALUES (?, 'NFA', ?, ?, 'Pending', ?)""",
+                                   (f"APPR-{appr_seq:04d}", nfa_id,
+                                    tier['Approver_Designation'], tier['Tier_Level']))
+                    appr_seq += 1
 
                 # Start the chain by emailing the first tier (simulated)
                 logging.info(f"Approval chain for {nfa_id} created. Notifying first tier.")

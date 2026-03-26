@@ -55,13 +55,14 @@ Return JSON: [{"cluster_name": "...", "pr_numbers": [...], "reason": "..."}]'''
             cursor = conn.cursor()
             
             sql_query = '''
-                SELECT 
-                    pr.PR_Number, pr.Material_Code, pr.Plant, pr.Quantity, pr.UOM, 
+                SELECT
+                    pr.PR_Number, pr.Material_Code, pr.Plant, pr.Quantity, pr.UOM,
                     pr.Delivery_Date, pr.PR_Status,
                     mm.Material_Description, mm.Material_Group, mm.Base_UOM,
-                    mm.Last_Purchase_Price
+                    lm.Last_Purchase_Price
                 FROM Master_PR_Data pr
                 JOIN Material_Master mm ON pr.Material_Code = mm.Material_Code
+                LEFT JOIN LPP_Master lm ON pr.Material_Code = lm.Material_Code AND pr.Plant = lm.Plant
                 WHERE pr.PR_Status = 'Open'
             '''
             cursor.execute(sql_query)

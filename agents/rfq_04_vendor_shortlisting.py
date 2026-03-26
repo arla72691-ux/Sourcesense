@@ -45,25 +45,26 @@ def vendor_shortlisting(state: S2CState) -> S2CState:
                 # Performance in a real DB would require indexed tables.
                 sql = '''
                     SELECT
-                        vm.Vendor_Code, vm.GSTIN, sm.Overall_Score,
+                        vm.Vendor_Code, vm.GSTIN, vm.Overall_Score,
                         COALESCE(mp.avg_delivery_pct, 0) as avg_delivery_pct,
                         COALESCE(mp.total_quality_incidents, 0) as total_quality_incidents,
-                        COALESCE(vh.Total_POs_12M, 0) as Total_POs_12M,
+                        COALESCE(ph.Total_POs_12M, 0) as Total_POs_12M,
                         vm.MSME_Category
                     FROM Vendor_Master vm
-                    JOIN Supplier_Master sm ON vm.Vendor_Code = sm.Supplier_Code
                     LEFT JOIN (
-                        SELECT Supplier_Code, AVG(Delivery_On_Time_Pct) as avg_delivery_pct, SUM(Quality_Incidents) as total_quality_incidents
+                        SELECT Supplier_Code,
+                               AVG(Delivery_On_Time_Pct) as avg_delivery_pct,
+                               SUM(Quality_Incidents) as total_quality_incidents
                         FROM Monthly_Performance
-                        WHERE date(Month || '-01') >= date('now', '-3 months')
+                        WHERE Period >= strftime('%Y-%m', date('now', '-3 months'))
                         GROUP BY Supplier_Code
                     ) mp ON vm.Vendor_Code = mp.Supplier_Code
                     LEFT JOIN (
-                        SELECT Vendor_Code, SUM(Total_POs_12M) as Total_POs_12M
-                        FROM Vendor_History
-                        WHERE Material_Code = ? AND date(Last_PO_Date) >= date('now', '-12 months')
+                        SELECT Vendor_Code, COUNT(*) as Total_POs_12M
+                        FROM PO_History
+                        WHERE Material_Code = ? AND date(PO_Date) >= date('now', '-12 months')
                         GROUP BY Vendor_Code
-                    ) vh ON vm.Vendor_Code = vh.Vendor_Code
+                    ) ph ON vm.Vendor_Code = ph.Vendor_Code
                     WHERE vm.Active_Status = 'Active' AND vm.Blacklisted = 0
                 '''
                 cursor.execute(sql, (material_code,))

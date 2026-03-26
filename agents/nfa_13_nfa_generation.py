@@ -56,8 +56,11 @@ def nfa_generation(state: S2CState) -> S2CState:
             cursor.execute("SELECT * FROM Material_Master WHERE Material_Code = ?", (cluster['Material_Code'],))
             material = dict(cursor.fetchone())
 
-            # Step 7: CTRL-003 Price vs LPP check
-            lpp = material.get('Last_Purchase_Price')
+            # Step 7: CTRL-003 Price vs LPP check — fetch from LPP_Master
+            cursor.execute("SELECT Last_Purchase_Price FROM LPP_Master WHERE Material_Code = ? AND Plant = ?",
+                           (cluster['Material_Code'], cluster['Plant']))
+            lpp_row = cursor.fetchone()
+            lpp = lpp_row['Last_Purchase_Price'] if lpp_row else None
             price_justification = None
             if lpp is None or lpp == 0:
                 status, savings, deviation = 'First_Purchase', None, None

@@ -1,0 +1,15 @@
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Generated DMS documents (runtime output)
+DMS_Documents/
+
+# Environment
+.env
+*.env
+
+# SQLite WAL/SHM files
+*.db-wal
+*.db-shm

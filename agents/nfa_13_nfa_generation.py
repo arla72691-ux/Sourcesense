@@ -10,7 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from google import genai
 from state import S2CState
-from db import get_db
+from db import get_db, next_id
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -32,7 +32,7 @@ def nfa_generation(state: S2CState) -> S2CState:
         # Check for auto-approved low-value deals that skip the main negotiation state-setting
         with get_db(state['db_path']) as conn:
             cursor = conn.cursor()
-            cursor.execute("""SELECT r.RFQ_ID, n.Negotiated_Price FROM Consolidated_PRs c 
+            cursor.execute("""SELECT r.RFQ_ID, n.Negotiated_Price FROM Consolidated_PRs c
                               JOIN RFQ_Log r ON c.RFQ_ID = r.RFQ_ID
                               JOIN Negotiation_Shortlist_Approval n ON r.RFQ_ID = n.RFQ_ID
                               WHERE c.PR_Status = 'Negotiation_Approved' AND c.NFA_Status IS NULL""")
@@ -47,7 +47,7 @@ def nfa_generation(state: S2CState) -> S2CState:
     try:
         with get_db(state['db_path']) as conn:
             cursor = conn.cursor()
-            
+
             # Step 2-6: Gather all data for the NFA document
             cursor.execute("SELECT * FROM Consolidated_PRs WHERE RFQ_ID = ?", (rfq_id,))
             cluster = dict(cursor.fetchone())
@@ -75,18 +75,19 @@ def nfa_generation(state: S2CState) -> S2CState:
                 price_justification = "Market price increase" # Placeholder
 
             # Step 8: Log compliance
-            cursor.execute("INSERT INTO Compliance_Log (Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?,?,?,?,?,?)",
-                           ('CTRL-003', 'NFA', rfq_id, 'Pass', f'Price vs LPP check: {status}', datetime.datetime.now().isoformat()))
+            comp_id = next_id(cursor, 'Compliance_Log', 'Compliance_ID', 'COMP')
+            cursor.execute("INSERT INTO Compliance_Log (Compliance_ID, Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?,?,?,?,?,?,?)",
+                           (comp_id, 'CTRL-003', 'NFA', rfq_id, 'Pass', f'Price vs LPP check: {status}', datetime.datetime.now().isoformat()))
 
             # Step 9: Call Gemini to generate NFA text
             # Dummy data for complex fields
-            nfa_prompt_data = {**cluster, **vendor, **material, 
-                               'negotiated_price': negotiated_price, 'total_value': negotiated_price * cluster['Quantity'], 
-                               'price_vs_lpp_status': status, 'savings_pct': savings, 'deviation_pct': deviation, 
-                               'vendors_invited': 3, 'submissions': 3, 'tech_eval_summary': 'All vendors compliant', 
-                               'comm_eval_summary': f'{vendor["Vendor_Name"]} was most competitive', 
+            nfa_prompt_data = {**cluster, **vendor, **material,
+                               'negotiated_price': negotiated_price, 'total_value': negotiated_price * cluster['Quantity'],
+                               'price_vs_lpp_status': status, 'savings_pct': savings, 'deviation_pct': deviation,
+                               'vendors_invited': 3, 'submissions': 3, 'tech_eval_summary': 'All vendors compliant',
+                               'comm_eval_summary': f'{vendor["Vendor_Name"]} was most competitive',
                                'ctrl_001_status': 'Pass', 'ctrl_003_status': 'Pass', 'ctrl_007_status': 'Pass', 'ctrl_008_status': 'Pass'}
-            
+
             prompt = '''...''' # Exact, long prompt from user request goes here
             # response = client.models.generate_content(model="gemini-2.5-pro", contents=prompt.format(**nfa_prompt_data))
             # nfa_doc_text = response.text
@@ -101,12 +102,13 @@ def nfa_generation(state: S2CState) -> S2CState:
             with open(file_path, 'w') as f: f.write(nfa_doc_text)
 
             # Step 13: Insert NFA_Log
-            cursor.execute("""INSERT INTO NFA_Log (NFA_ID, Consolidation_Cluster_ID, RFQ_ID, Recommended_Vendor, Negotiated_Unit_Price, Total_NFA_Value, Price_Vs_LPP_Status, Savings_Vs_LPP_Pct, Price_Deviation_Pct, Price_Justification, NFA_Status, NFA_Document_File_ID, Created_At) 
-                              VALUES (?,?,?,?,?,?,?,?,?,?,'Draft',?,?)""", 
+            cursor.execute("""INSERT INTO NFA_Log (NFA_ID, Consolidation_Cluster_ID, RFQ_ID, Recommended_Vendor, Negotiated_Unit_Price, Total_NFA_Value, Price_Vs_LPP_Status, Savings_Vs_LPP_Pct, Price_Deviation_Pct, Price_Justification, NFA_Status, NFA_Document_File_ID, Created_At)
+                              VALUES (?,?,?,?,?,?,?,?,?,?,'Draft',?,?)""",
                               (nfa_id, cluster['Consolidation_Cluster_ID'], rfq_id, vendor['Vendor_Code'], negotiated_price, negotiated_price * cluster['Quantity'], status, savings, deviation, price_justification, os.path.basename(file_path), datetime.datetime.now().isoformat()))
-            
+
             # Step 14 & 15: Log compliance and update cluster
-            cursor.execute("INSERT INTO Compliance_Log (Control_ID, Entity_Type, Entity_ID, Result, Checked_At) VALUES (?,?,?,?,?)", ('CTRL-015', 'NFA', nfa_id, 'Pass', datetime.datetime.now().isoformat()))
+            comp_id2 = next_id(cursor, 'Compliance_Log', 'Compliance_ID', 'COMP')
+            cursor.execute("INSERT INTO Compliance_Log (Compliance_ID, Control_ID, Entity_Type, Entity_ID, Result, Checked_At) VALUES (?,?,?,?,?,?)", (comp_id2, 'CTRL-015', 'NFA', nfa_id, 'Pass', datetime.datetime.now().isoformat()))
             cursor.execute("UPDATE Consolidated_PRs SET NFA_Status = 'Draft' WHERE RFQ_ID = ?", (rfq_id,))
 
             state['nfa_id'] = nfa_id # Pass NFA ID to the next agent

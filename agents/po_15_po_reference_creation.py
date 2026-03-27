@@ -8,7 +8,7 @@ import datetime
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from state import S2CState
-from db import get_db
+from db import get_db, next_id
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -39,9 +39,9 @@ def po_reference_creation(state: S2CState) -> S2CState:
                 nfa_id = nfa['NFA_ID']
                 # Step 2a & 2b: Double-check all approval tiers are met
                 # This is a good practice check, though our simulation approves all at once.
-                cursor.execute("SELECT COUNT(*) FROM NFA_Approval_Log WHERE NFA_ID = ?", (nfa_id,))
+                cursor.execute("SELECT COUNT(*) FROM Approval_Log WHERE Entity_Type = 'NFA' AND Entity_ID = ?", (nfa_id,))
                 total_tiers = cursor.fetchone()[0]
-                cursor.execute("SELECT COUNT(*) FROM NFA_Approval_Log WHERE NFA_ID = ? AND Decision = 'Approved'", (nfa_id,))
+                cursor.execute("SELECT COUNT(*) FROM Approval_Log WHERE Entity_Type = 'NFA' AND Entity_ID = ? AND Decision = 'Approved'", (nfa_id,))
                 approved_tiers = cursor.fetchone()[0]
 
                 if total_tiers != approved_tiers:
@@ -58,12 +58,13 @@ def po_reference_creation(state: S2CState) -> S2CState:
                     INSERT INTO PO_Reference (PO_Ref_ID, NFA_ID, Consolidation_Cluster_ID, API_Call_Status, Created_By, Created_At)
                     VALUES (?, ?, ?, 'Pending', ?, ?)
                 """, (po_ref_id, nfa_id, nfa['Consolidation_Cluster_ID'], nfa['Assigned_Buyer'], datetime.datetime.now().isoformat()))
-                
+
                 # Step 3 & 4: Update state and log
                 state["po_ref_id"] = po_ref_id
                 logging.info(f"Created PO_Reference {po_ref_id} for NFA {nfa_id}.")
-                cursor.execute("INSERT INTO Process_Events_Log (Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?)",
-                               ('S2C.PO.19', 'PO_Reference', po_ref_id, 'PO_Reference_Created', f'Internal PO reference created for NFA {nfa_id}', 'Agent:PO.15', datetime.datetime.now().isoformat()))
+                evt_id = next_id(cursor, 'Process_Events_Log', 'Event_ID', 'EVT')
+                cursor.execute("INSERT INTO Process_Events_Log (Event_ID, Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?,?)",
+                               (evt_id, 'S2C.PO.19', 'PO_Reference', po_ref_id, 'PO_Reference_Created', f'Internal PO reference created for NFA {nfa_id}', 'Agent:PO.15', datetime.datetime.now().isoformat()))
 
     except Exception as e:
         logging.error(f"An error occurred in PO Reference Creation: {e}", exc_info=True)

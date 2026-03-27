@@ -14,7 +14,7 @@ import smtplib
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from state import S2CState
-from db import get_db
+from db import get_db, next_id
 from feedback import request_human_feedback
 import config
 
@@ -144,11 +144,11 @@ def commercial_terms_finalisation(state: S2CState) -> S2CState:
             cursor = conn.cursor()
 
             # Fetch all clusters awaiting commercial terms
+            # Assigned_Buyer stores the buyer's email address directly
             cursor.execute("""
                 SELECT cp.*, ad.Full_Name AS Buyer_Name, ad.Email AS Buyer_Email
                 FROM Consolidated_PRs cp
-                JOIN Buyer_Master bm ON cp.Assigned_Buyer = bm.Buyer_ID
-                JOIN Active_Directory ad ON bm.Employee_ID = ad.Employee_ID
+                JOIN Active_Directory ad ON cp.Assigned_Buyer = ad.Email
                 WHERE cp.PR_Status = 'Buyer_Assigned'
                 AND (cp.Commercial_Terms_Status IS NULL OR cp.Commercial_Terms_Status = 'Pending_Response')
             """)
@@ -260,11 +260,13 @@ def commercial_terms_finalisation(state: S2CState) -> S2CState:
                 """, (received_at, comm_request_id))
 
                 # Process event log
+                evt_id = next_id(cursor, 'Process_Events_Log', 'Event_ID', 'EVT')
                 cursor.execute("""
                     INSERT INTO Process_Events_Log
-                        (Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                        (Event_ID, Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
+                    evt_id,
                     'S2C.PR.03b', 'Comm_Request', comm_request_id,
                     'Comm_Terms_Received',
                     f"Commercial terms received for {len(cluster_ids)} cluster(s) via simulation.",

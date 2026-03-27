@@ -4,6 +4,7 @@ import json
 import os
 import smtplib
 import sys
+import datetime
 from email.mime.text import MIMEText
 
 # Add project root to path
@@ -11,7 +12,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from google import genai
 from state import S2CState
-from db import get_db
+from db import get_db, next_id
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -51,7 +52,7 @@ def spec_extraction(state: S2CState) -> S2CState:
     state['current_agent'] = "pr_02_spec_extraction"
     errors = state.get('errors', [])
     specs_were_extracted = False
-    
+
     prompt_template = '''Extract structured technical specifications from this document. Output JSON: {"dimensions": {...}, "standards": [...], "alternatives": [...], "critical_parameters": [...], "inspection_requirements": [...]} '''
 
     try:
@@ -72,13 +73,15 @@ def spec_extraction(state: S2CState) -> S2CState:
                 material_code = cluster['Material_Code'] # Assuming one primary material per cluster for now
 
                 cursor.execute("""
-                    SELECT m.Spec_Document_File_ID, pr.Requisitioner 
+                    SELECT m.Spec_Document_File_ID, pr.Requisitioner
                     FROM Material_Master m
                     JOIN Master_PR_Data pr ON m.Material_Code = pr.Material_Code
-                    WHERE m.Material_Code = ? 
+                    WHERE m.Material_Code = ?
                     LIMIT 1
                 """, (material_code,))
                 material_info = cursor.fetchone()
+
+                final_status = 'Unknown'
 
                 if material_info and material_info['Spec_Document_File_ID']:
                     spec_file_id = material_info['Spec_Document_File_ID']
@@ -89,13 +92,14 @@ def spec_extraction(state: S2CState) -> S2CState:
                     try:
                         with open(file_path, 'r', encoding='utf-8') as f:
                             doc_content = f.read()
-                        
+
                         response = client.models.generate_content(model="gemini-2.5-pro", contents=prompt_template + "\n\n" + doc_content)
                         cleaned_json = response.text.strip().replace('```json', '').replace('```', '')
                         extracted_specs = json.loads(cleaned_json)
 
                         cursor.execute("UPDATE Consolidated_PRs SET Long_Text_Specifications = ?, PR_Status = 'Specs_Ready' WHERE Consolidation_Cluster_ID = ?",
                                        (json.dumps(extracted_specs), cluster_id))
+                        final_status = 'Specs_Ready'
                         specs_were_extracted = True
                         logging.info(f"Extracted and saved specs for cluster {cluster_id}.")
 
@@ -107,19 +111,22 @@ def spec_extraction(state: S2CState) -> S2CState:
                         logging.error(f"Bad JSON from Gemini for {cluster_id}: {response.text}")
                 else:
                     # No spec doc, so request it
-                    requisitioner_email = material_info['Requisitioner'] if material_info else 'default.requisitioner@example.com' 
-                    cursor.execute("INSERT INTO Spec_Requests (Consolidation_Cluster_ID, Requested_From, Status, Created_At) VALUES (?, ?, ?, ?)",
-                                   (cluster_id, requisitioner_email, 'Pending', datetime.datetime.now().isoformat()))
+                    requisitioner_email = material_info['Requisitioner'] if material_info else 'default.requisitioner@example.com'
+                    spr_id = next_id(cursor, 'Spec_Requests', 'Spec_Request_ID', 'SPR')
+                    cursor.execute("INSERT INTO Spec_Requests (Spec_Request_ID, Consolidation_Cluster_ID, Requested_From, Status, Created_At) VALUES (?, ?, ?, ?, ?)",
+                                   (spr_id, cluster_id, requisitioner_email, 'Pending', datetime.datetime.now().isoformat()))
                     cursor.execute("UPDATE Consolidated_PRs SET PR_Status = 'Specs_Pending' WHERE Consolidation_Cluster_ID = ?", (cluster_id,))
-                    
+                    final_status = 'Specs_Pending'
+
                     logging.info(f"No spec doc for cluster {cluster_id}. Sending request to {requisitioner_email}.")
                     email_subject = f"Action Required: Missing Technical Specification for {cluster_id}"
                     email_body = f"Dear Requisitioner,\n\nPlease provide the technical specification document for material {material_code} related to procurement cluster {cluster_id}.\n\nThank you,\nSourcesense Platform"
                     send_email(requisitioner_email, email_subject, email_body)
 
                 # Log Process Event
-                cursor.execute("INSERT INTO Process_Events_Log (Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                               ('S2C.RFQ.02', 'Cluster', cluster_id, 'SpecExtraction', f"Status: {cursor.fetchone()['PR_Status'] if cursor.fetchone() else 'Unknown'}", 'Agent:PR.02', datetime.datetime.now().isoformat()))
+                evt_id = next_id(cursor, 'Process_Events_Log', 'Event_ID', 'EVT')
+                cursor.execute("INSERT INTO Process_Events_Log (Event_ID, Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                               (evt_id, 'S2C.RFQ.02', 'Cluster', cluster_id, 'SpecExtraction', f"Status: {final_status}", 'Agent:PR.02', datetime.datetime.now().isoformat()))
 
     except Exception as e:
         logging.error(f"An error occurred in Spec Extraction: {e}", exc_info=True)

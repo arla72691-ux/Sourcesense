@@ -8,7 +8,7 @@ import datetime
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from state import S2CState
-from db import get_db
+from db import get_db, next_id
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -55,7 +55,7 @@ def rfq_creation(state: S2CState) -> S2CState:
                         payment_terms = "Net 30 days from GRN"
                     else:
                         payment_terms = "Net 45 days from GRN"
-                    
+
                     # Step 3: Update cluster with new terms
                     cursor.execute("UPDATE Consolidated_PRs SET Payment_Terms = ?, Comm_Terms_Received_At = ? WHERE Consolidation_Cluster_ID = ?",
                                    (payment_terms, datetime.datetime.now().isoformat(), cluster_id))
@@ -111,9 +111,14 @@ SUBMISSION INSTRUCTIONS:
                 cursor.execute("UPDATE Consolidated_PRs SET RFQ_ID = ?, RFQ_Generated_At = ?, PR_Status = 'RFQ_Generated' WHERE Consolidation_Cluster_ID = ?",
                                (rfq_id, datetime.datetime.now().isoformat(), cluster_id))
 
+                # Backfill Vendor_Shortlist rows that were inserted with RFQ_ID = NULL
+                # (pipeline runs sequentially, so all NULLs belong to the current batch)
+                cursor.execute("UPDATE Vendor_Shortlist SET RFQ_ID = ? WHERE RFQ_ID IS NULL", (rfq_id,))
+
                 # Step 12: Log Process Event
-                cursor.execute("INSERT INTO Process_Events_Log (Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?)",
-                               ('S2C.RFQ.05', 'RFQ', rfq_id, 'Creation', f'RFQ Draft created for cluster {cluster_id}', 'Agent:RFQ.05', datetime.datetime.now().isoformat()))
+                evt_id = next_id(cursor, 'Process_Events_Log', 'Event_ID', 'EVT')
+                cursor.execute("INSERT INTO Process_Events_Log (Event_ID, Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?,?)",
+                               (evt_id, 'S2C.RFQ.05', 'RFQ', rfq_id, 'Creation', f'RFQ Draft created for cluster {cluster_id}', 'Agent:RFQ.05', datetime.datetime.now().isoformat()))
 
     except Exception as e:
         logging.error(f"An error occurred in RFQ Creation: {e}", exc_info=True)

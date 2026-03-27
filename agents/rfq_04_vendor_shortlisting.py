@@ -11,7 +11,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from google import genai
 from feedback import request_human_feedback
 from state import S2CState
-from db import get_db
+from db import get_db, next_id
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -74,15 +74,17 @@ def vendor_shortlisting(state: S2CState) -> S2CState:
                 scored_vendors = []
                 for vendor in potential_vendors:
                     # CTRL-008: Check Onboarding_Tracker
-                    cursor.execute("SELECT Finance_Decision FROM Onboarding_Tracker WHERE GST_Number = ?", (vendor['GSTIN'],))
+                    cursor.execute("SELECT Finance_Decision FROM Onboarding_Tracker WHERE GSTIN = ?", (vendor['GSTIN'],))
                     onboarding = cursor.fetchone()
                     if not onboarding or onboarding['Finance_Decision'] != 'Approved':
-                        cursor.execute("INSERT INTO Compliance_Log (Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?, ?, ?, ?, ?, ?)",
-                                       ('CTRL-008', 'Vendor', vendor['Vendor_Code'], 'Fail', 'Vendor not fully onboarded or approved.', datetime.datetime.now().isoformat()))
+                        comp_id = next_id(cursor, 'Compliance_Log', 'Compliance_ID', 'COMP')
+                        cursor.execute("INSERT INTO Compliance_Log (Compliance_ID, Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                       (comp_id, 'CTRL-008', 'Vendor', vendor['Vendor_Code'], 'Fail', 'Vendor not fully onboarded or approved.', datetime.datetime.now().isoformat()))
                         continue # Exclude vendor
                     else:
-                         cursor.execute("INSERT INTO Compliance_Log (Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?, ?, ?, ?, ?, ?)",
-                                       ('CTRL-008', 'Vendor', vendor['Vendor_Code'], 'Pass', 'Vendor onboarding approved.', datetime.datetime.now().isoformat()))
+                        comp_id = next_id(cursor, 'Compliance_Log', 'Compliance_ID', 'COMP')
+                        cursor.execute("INSERT INTO Compliance_Log (Compliance_ID, Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                       (comp_id, 'CTRL-008', 'Vendor', vendor['Vendor_Code'], 'Pass', 'Vendor onboarding approved.', datetime.datetime.now().isoformat()))
 
                     # Step 8: Scoring Logic
                     material_experience_score = 0
@@ -92,16 +94,17 @@ def vendor_shortlisting(state: S2CState) -> S2CState:
                         material_experience_score = 60
                     else:
                         material_experience_score = 30
-                    
+
                     score = (vendor['Overall_Score'] * 0.4) + (vendor['avg_delivery_pct'] * 0.3) + (material_experience_score * 0.3)
                     scored_vendors.append(dict(vendor) | {"calculated_score": round(score, 2)})
-                
+
                 # CTRL-007 Log (Blacklist check is in the initial SQL WHERE clause)
-                cursor.execute("INSERT INTO Compliance_Log (Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?, ?, ?, ?, ?, ?)",
-                               ('CTRL-007', 'Cluster', cluster_id, 'Pass', 'Blacklisted vendors excluded from query.', datetime.datetime.now().isoformat()))
+                comp_id = next_id(cursor, 'Compliance_Log', 'Compliance_ID', 'COMP')
+                cursor.execute("INSERT INTO Compliance_Log (Compliance_ID, Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                               (comp_id, 'CTRL-007', 'Cluster', cluster_id, 'Pass', 'Blacklisted vendors excluded from query.', datetime.datetime.now().isoformat()))
 
                 # Step 9: Call Gemini to recommend final shortlist
-                prompt = f"""Review these vendor scores for material {material_code}. 
+                prompt = f"""Review these vendor scores for material {material_code}.
                 Recommend 3-5 vendors considering: compliance history, material-specific experience, and MSME diversity (prefer including at least 1 MSME vendor if available).
                 Vendors:
                 {json.dumps(scored_vendors, indent=2)}
@@ -114,13 +117,15 @@ def vendor_shortlisting(state: S2CState) -> S2CState:
 
                 # Step 10 & 11: Update DB with shortlist
                 # RFQ_ID is NULL at this stage — backfilled by RFQ.05 once RFQ is generated
+                # Build a lookup dict so we can retrieve the calculated_score by vendor_code
+                scored_by_code = {v['Vendor_Code']: v['calculated_score'] for v in scored_vendors}
                 for vendor in shortlist:
                     cursor.execute(
                         "INSERT INTO Vendor_Shortlist (RFQ_ID, Vendor_Code, Shortlist_Reason, Historical_Score, Added_At) VALUES (?, ?, ?, ?, ?)",
                         (None, vendor['vendor_code'], vendor['reason'],
-                         vendor.get('calculated_score', 0), datetime.datetime.now().isoformat())
+                         scored_by_code.get(vendor['vendor_code'], 0), datetime.datetime.now().isoformat())
                     )
-                
+
                 cursor.execute("UPDATE Consolidated_PRs SET PR_Status = 'Vendors_Shortlisted' WHERE Consolidation_Cluster_ID = ?", (cluster_id,))
                 logging.info(f"Final shortlist for {cluster_id} created with {len(shortlist)} vendors.")
 
@@ -137,8 +142,9 @@ def vendor_shortlisting(state: S2CState) -> S2CState:
                 )
 
                 # Step 13: Log Process Event
-                cursor.execute("INSERT INTO Process_Events_Log (Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?)",
-                               ('S2C.RFQ.04', 'Cluster', cluster_id, 'VendorShortlist', f'{len(shortlist)} vendors shortlisted by AI.', 'Agent:RFQ.04', datetime.datetime.now().isoformat()))
+                evt_id = next_id(cursor, 'Process_Events_Log', 'Event_ID', 'EVT')
+                cursor.execute("INSERT INTO Process_Events_Log (Event_ID, Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?,?)",
+                               (evt_id, 'S2C.RFQ.04', 'Cluster', cluster_id, 'VendorShortlist', f'{len(shortlist)} vendors shortlisted by AI.', 'Agent:RFQ.04', datetime.datetime.now().isoformat()))
 
     except Exception as e:
         logging.error(f"An error occurred in Vendor Shortlisting: {e}", exc_info=True)

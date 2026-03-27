@@ -10,7 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from google import genai
 from state import S2CState
-from db import get_db
+from db import get_db, next_id
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -46,7 +46,7 @@ def tech_evaluation(state: S2CState) -> S2CState:
 
                 cursor.execute("SELECT * FROM RFQ_Submissions WHERE RFQ_ID = ?", (rfq_id,))
                 submissions = cursor.fetchall()
-                
+
                 if not submissions:
                     logging.warning(f"No submissions found for RFQ {rfq_id} to evaluate.")
                     continue
@@ -75,15 +75,17 @@ def tech_evaluation(state: S2CState) -> S2CState:
                         response = client.models.generate_content(model="gemini-2.5-pro", contents=prompt)
                         cleaned_json = response.text.strip().replace('```json', '').replace('```', '')
                         eval_result = json.loads(cleaned_json)
-                        
-                        cursor.execute("INSERT INTO RFQ_Tech_Evaluations (Submission_ID, Tech_Score, Tech_Remarks) VALUES (?, ?, ?)",
-                                       (submission_id, eval_result['tech_score'], eval_result['tech_remarks']))
+
+                        te_id = next_id(cursor, 'RFQ_Tech_Evaluations', 'Tech_Eval_ID', 'TE')
+                        cursor.execute("INSERT INTO RFQ_Tech_Evaluations (Tech_Eval_ID, Submission_ID, Tech_Score, Tech_Remarks) VALUES (?, ?, ?, ?)",
+                                       (te_id, submission_id, eval_result['tech_score'], eval_result['tech_remarks']))
 
                         if eval_result.get('disqualify', False):
                             reason = eval_result.get('disqualify_reason', 'AI evaluation')
                             logging.warning(f"Submission {submission_id} disqualified by AI. Reason: {reason}")
-                            cursor.execute("INSERT INTO Compliance_Log (Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?,?,?,?,?,?)",
-                                           ('Tech-Eval', 'Submission', submission_id, 'Fail', f'Disqualified during tech eval: {reason}', datetime.datetime.now().isoformat()))
+                            comp_id = next_id(cursor, 'Compliance_Log', 'Compliance_ID', 'COMP')
+                            cursor.execute("INSERT INTO Compliance_Log (Compliance_ID, Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?,?,?,?,?,?,?)",
+                                           (comp_id, 'Tech-Eval', 'Submission', submission_id, 'Fail', f'Disqualified during tech eval: {reason}', datetime.datetime.now().isoformat()))
 
                     except (json.JSONDecodeError, Exception) as e:
                         all_evaluated = False
@@ -92,17 +94,20 @@ def tech_evaluation(state: S2CState) -> S2CState:
 
                 # Step 7: CTRL-011
                 if all_evaluated:
-                    cursor.execute("INSERT INTO Compliance_Log (Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?,?,?,?,?,?)",
-                                   ('CTRL-011', 'RFQ', rfq_id, 'Pass', 'All submissions technically evaluated.', datetime.datetime.now().isoformat()))
+                    comp_id = next_id(cursor, 'Compliance_Log', 'Compliance_ID', 'COMP')
+                    cursor.execute("INSERT INTO Compliance_Log (Compliance_ID, Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?,?,?,?,?,?,?)",
+                                   (comp_id, 'CTRL-011', 'RFQ', rfq_id, 'Pass', 'All submissions technically evaluated.', datetime.datetime.now().isoformat()))
                     # This agent is done, but the overall eval process for the RFQ is not.
                     # We don't update the main status here.
                 else:
-                    cursor.execute("INSERT INTO Compliance_Log (Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?,?,?,?,?,?)",
-                                   ('CTRL-011', 'RFQ', rfq_id, 'Fail', 'One or more submissions failed technical evaluation.', datetime.datetime.now().isoformat()))
-                
+                    comp_id = next_id(cursor, 'Compliance_Log', 'Compliance_ID', 'COMP')
+                    cursor.execute("INSERT INTO Compliance_Log (Compliance_ID, Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?,?,?,?,?,?,?)",
+                                   (comp_id, 'CTRL-011', 'RFQ', rfq_id, 'Fail', 'One or more submissions failed technical evaluation.', datetime.datetime.now().isoformat()))
+
                 # Step 8: Log Process Event
-                cursor.execute("INSERT INTO Process_Events_Log (Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?)",
-                               ('S2C.RFQ.10', 'RFQ', rfq_id, 'TechEvaluation', 'Technical evaluation completed for all submissions.', 'Agent:EVAL.08', datetime.datetime.now().isoformat()))
+                evt_id = next_id(cursor, 'Process_Events_Log', 'Event_ID', 'EVT')
+                cursor.execute("INSERT INTO Process_Events_Log (Event_ID, Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?,?)",
+                               (evt_id, 'S2C.RFQ.10', 'RFQ', rfq_id, 'TechEvaluation', 'Technical evaluation completed for all submissions.', 'Agent:EVAL.08', datetime.datetime.now().isoformat()))
 
     except Exception as e:
         logging.error(f"An error occurred in Technical Evaluation: {e}", exc_info=True)

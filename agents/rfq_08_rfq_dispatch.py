@@ -10,7 +10,7 @@ from email.mime.text import MIMEText
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from state import S2CState
-from db import get_db
+from db import get_db, next_id
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -54,9 +54,9 @@ def rfq_dispatch(state: S2CState) -> S2CState:
             for rfq in rfqs_to_dispatch:
                 rfq_id = rfq['RFQ_ID']
                 cluster_id = rfq['Consolidation_Cluster_ID']
-                
+
                 # Step 1 & 2: CTRL-001 final enforcement
-                cursor.execute("SELECT Vendor_Code FROM Vendor_Shortlist WHERE RFQ_ID = ?", (cluster_id,))
+                cursor.execute("SELECT Vendor_Code FROM Vendor_Shortlist WHERE RFQ_ID = ?", (rfq_id,))
                 shortlisted_vendors = cursor.fetchall()
                 vendor_count = len(shortlisted_vendors)
 
@@ -66,16 +66,18 @@ def rfq_dispatch(state: S2CState) -> S2CState:
                     if not svj or svj['Approval_Status'] != 'Approved':
                         details = f"Dispatch blocked for RFQ {rfq_id}: {vendor_count} vendors and no approved SVJ."
                         logging.error(f"CTRL-001 FAIL (final): {details}")
-                        cursor.execute("INSERT INTO Compliance_Log (Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?,?,?,?,?,?)",
-                                       ('CTRL-001', 'RFQ', rfq_id, 'Fail', details, datetime.datetime.now().isoformat()))
+                        comp_id = next_id(cursor, 'Compliance_Log', 'Compliance_ID', 'COMP')
+                        cursor.execute("INSERT INTO Compliance_Log (Compliance_ID, Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?,?,?,?,?,?,?)",
+                                       (comp_id, 'CTRL-001', 'RFQ', rfq_id, 'Fail', details, datetime.datetime.now().isoformat()))
                         errors.append(details)
                         continue # Stop processing this RFQ
                     else:
                         logging.warning(f"CTRL-001 proceeding with {vendor_count} vendors for RFQ {rfq_id} due to approved SVJ.")
 
                 # If we are here, compliance is passed.
-                cursor.execute("INSERT INTO Compliance_Log (Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?,?,?,?,?,?)",
-                               ('CTRL-001', 'RFQ', rfq_id, 'Pass', f'Dispatching to {vendor_count} vendors.', datetime.datetime.now().isoformat()))
+                comp_id = next_id(cursor, 'Compliance_Log', 'Compliance_ID', 'COMP')
+                cursor.execute("INSERT INTO Compliance_Log (Compliance_ID, Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?,?,?,?,?,?,?)",
+                               (comp_id, 'CTRL-001', 'RFQ', rfq_id, 'Pass', f'Dispatching to {vendor_count} vendors.', datetime.datetime.now().isoformat()))
 
                 # Step 3: Dispatch to each vendor
                 rfq_doc_path = os.path.join(config.DMS_ROOT, 'RFQ', f"RFQ_{rfq_id}.txt")
@@ -94,19 +96,21 @@ def rfq_dispatch(state: S2CState) -> S2CState:
 
                     send_email(vendor_email, email_subject, rfq_content, attachment_path=rfq_doc_path)
 
-                    # Log the dispatch
-                    cursor.execute("INSERT INTO RFQ_Dispatch_Log (RFQ_ID, Vendor_Code, Dispatch_Method, Dispatched_At, Delivery_Status) VALUES (?, ?, 'Email', ?, 'Sent')",
-                                   (rfq_id, vendor_code, datetime.datetime.now().isoformat()))
+                    # Log the dispatch — Fix: add Dispatch_ID via next_id
+                    disp_id = next_id(cursor, 'RFQ_Dispatch_Log', 'Dispatch_ID', 'DISP')
+                    cursor.execute("INSERT INTO RFQ_Dispatch_Log (Dispatch_ID, RFQ_ID, Vendor_Code, Dispatch_Method, Dispatched_At, Delivery_Status) VALUES (?, ?, ?, 'Email', ?, 'Sent')",
+                                   (disp_id, rfq_id, vendor_code, datetime.datetime.now().isoformat()))
 
                 # Step 4 & 5: Update statuses
                 cursor.execute("UPDATE RFQ_Log SET RFQ_Status = 'Dispatched' WHERE RFQ_ID = ?", (rfq_id,))
                 cursor.execute("UPDATE Consolidated_PRs SET PR_Status = 'RFQ_Dispatched', RFQ_Dispatched_At = ? WHERE Consolidation_Cluster_ID = ?",
                                (datetime.datetime.now().isoformat(), cluster_id))
-                
+
                 # Step 7: Log process event
                 logging.info(f"RFQ {rfq_id} dispatched to {vendor_count} vendors.")
-                cursor.execute("INSERT INTO Process_Events_Log (Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?)",
-                               ('S2C.RFQ.08', 'RFQ', rfq_id, 'Dispatch', f'RFQ sent to {vendor_count} vendors.', 'Agent:RFQ.08', datetime.datetime.now().isoformat()))
+                evt_id = next_id(cursor, 'Process_Events_Log', 'Event_ID', 'EVT')
+                cursor.execute("INSERT INTO Process_Events_Log (Event_ID, Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?,?)",
+                               (evt_id, 'S2C.RFQ.08', 'RFQ', rfq_id, 'Dispatch', f'RFQ sent to {vendor_count} vendors.', 'Agent:RFQ.08', datetime.datetime.now().isoformat()))
 
     except Exception as e:
         logging.error(f"An error occurred in RFQ Dispatch: {e}", exc_info=True)

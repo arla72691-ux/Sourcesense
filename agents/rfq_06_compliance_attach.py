@@ -10,7 +10,7 @@ from email.mime.text import MIMEText
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from state import S2CState
-from db import get_db
+from db import get_db, next_id
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -40,7 +40,7 @@ def compliance_attach(state: S2CState) -> S2CState:
     logging.info("Entering RFQ.06 - Compliance Attach agent.")
     state['current_agent'] = "rfq_06_compliance_attach"
     errors = state.get('errors', [])
-    
+
     try:
         with get_db(state['db_path']) as conn:
             cursor = conn.cursor()
@@ -57,7 +57,8 @@ def compliance_attach(state: S2CState) -> S2CState:
                 logging.info(f"Processing RFQ {rfq_id} for compliance.")
 
                 # Step 1 & 2: CTRL-001 pre-check (vendor count)
-                cursor.execute("SELECT COUNT(*) FROM Vendor_Shortlist WHERE RFQ_ID = ?", (rfq['Consolidation_Cluster_ID'],))
+                # Fix: use rfq_id (not rfq['Consolidation_Cluster_ID']) to look up Vendor_Shortlist
+                cursor.execute("SELECT COUNT(*) FROM Vendor_Shortlist WHERE RFQ_ID = ?", (rfq_id,))
                 vendor_count = cursor.fetchone()[0]
 
                 if vendor_count < 3:
@@ -65,9 +66,10 @@ def compliance_attach(state: S2CState) -> S2CState:
                     # Step 2a: INSERT SVJ_Log
                     svj_reason = f"Single/limited source for material {material_code} identified during auto-shortlisting."
                     # In a real system, the Created_By would be the buyer from the cluster
-                    cursor.execute("INSERT INTO SVJ_Log (RFQ_ID, Justification_Reason, Approval_Status, Created_By, Created_At) VALUES (?, ?, 'Pending', ?, ?)",
-                                   (rfq_id, svj_reason, state.get('buyer_assigned', 'System'), datetime.datetime.now().isoformat()))
-                    
+                    svj_id = next_id(cursor, 'SVJ_Log', 'SVJ_ID', 'SVJ')
+                    cursor.execute("INSERT INTO SVJ_Log (SVJ_ID, RFQ_ID, Justification_Reason, Approval_Status, Created_By, Created_At) VALUES (?, ?, ?, 'Pending', ?, ?)",
+                                   (svj_id, rfq_id, svj_reason, state.get('buyer_assigned', 'System'), datetime.datetime.now().isoformat()))
+
                     # Step 2b: Email Procurement Head
                     # Assuming Procurement Head email is in a config or designations master
                     proc_head_email = "procurement.head@example.com"
@@ -82,8 +84,9 @@ def compliance_attach(state: S2CState) -> S2CState:
                     continue # Move to the next RFQ
                 else:
                     logging.info(f"CTRL-001 PASS (pre-check): RFQ {rfq_id} has {vendor_count} vendors.")
-                    cursor.execute("INSERT INTO Compliance_Log (Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?,?,?,?,?,?)",
-                                   ('CTRL-001', 'RFQ', rfq_id, 'Pass', f'{vendor_count} vendors shortlisted.', datetime.datetime.now().isoformat()))
+                    comp_id = next_id(cursor, 'Compliance_Log', 'Compliance_ID', 'COMP')
+                    cursor.execute("INSERT INTO Compliance_Log (Compliance_ID, Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?,?,?,?,?,?,?)",
+                                   (comp_id, 'CTRL-001', 'RFQ', rfq_id, 'Pass', f'{vendor_count} vendors shortlisted.', datetime.datetime.now().isoformat()))
 
                 # Step 3 & 4: Append references to RFQ document
                 # This is a placeholder as Material_References table was not in schema
@@ -100,8 +103,9 @@ def compliance_attach(state: S2CState) -> S2CState:
                 cursor.execute("UPDATE RFQ_Log SET RFQ_Status = 'Ready_For_Approval' WHERE RFQ_ID = ?", (rfq_id,))
 
                 # Step 7: Log process event
-                cursor.execute("INSERT INTO Process_Events_Log (Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?)",
-                               ('S2C.RFQ.06', 'RFQ', rfq_id, 'ComplianceAttach', 'SVJ check passed. RFQ ready for approval.', 'Agent:RFQ.06', datetime.datetime.now().isoformat()))
+                evt_id = next_id(cursor, 'Process_Events_Log', 'Event_ID', 'EVT')
+                cursor.execute("INSERT INTO Process_Events_Log (Event_ID, Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?,?)",
+                               (evt_id, 'S2C.RFQ.06', 'RFQ', rfq_id, 'ComplianceAttach', 'SVJ check passed. RFQ ready for approval.', 'Agent:RFQ.06', datetime.datetime.now().isoformat()))
 
     except Exception as e:
         logging.error(f"An error occurred in Compliance Attach: {e}", exc_info=True)

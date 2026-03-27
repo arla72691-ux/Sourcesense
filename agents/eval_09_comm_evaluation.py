@@ -8,7 +8,7 @@ import datetime
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from state import S2CState
-from db import get_db
+from db import get_db, next_id
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -60,7 +60,7 @@ def comm_evaluation(state: S2CState) -> S2CState:
 
                 for sub in submissions:
                     sub_id = sub['Submission_ID']
-                    
+
                     # PRICE SCORE
                     price_score = (best_price / sub['Quoted_Unit_Price']) * 100 if sub['Quoted_Unit_Price'] > 0 else 0
                     price_score = min(price_score, 100) # Cap at 100
@@ -80,13 +80,15 @@ def comm_evaluation(state: S2CState) -> S2CState:
 
                     # Step 5: Insert scores
                     remarks = f"Price Score: {price_score:.2f}, Delivery Score: {delivery_score:.2f}"
-                    cursor.execute("INSERT INTO RFQ_Comm_Evaluations (Submission_ID, Price_Score, Payment_Score, Delivery_Score, Comm_Remarks) VALUES (?, ?, ?, ?, ?)",
-                                   (sub_id, price_score, payment_score, delivery_score, remarks))
+                    ce_id = next_id(cursor, 'RFQ_Comm_Evaluations', 'Comm_Eval_ID', 'CE')
+                    cursor.execute("INSERT INTO RFQ_Comm_Evaluations (Comm_Eval_ID, Submission_ID, Price_Score, Payment_Score, Delivery_Score, Comm_Remarks) VALUES (?, ?, ?, ?, ?, ?)",
+                                   (ce_id, sub_id, price_score, payment_score, delivery_score, remarks))
 
                 # Step 6: Log process event
                 logging.info(f"Commercial evaluation completed for RFQ {rfq_id}.")
-                cursor.execute("INSERT INTO Process_Events_Log (Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?)",
-                               ('S2C.RFQ.11', 'RFQ', rfq_id, 'CommEvaluation', 'Commercial evaluation of all submissions complete.', 'Agent:EVAL.09', datetime.datetime.now().isoformat()))
+                evt_id = next_id(cursor, 'Process_Events_Log', 'Event_ID', 'EVT')
+                cursor.execute("INSERT INTO Process_Events_Log (Event_ID, Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?,?)",
+                               (evt_id, 'S2C.RFQ.11', 'RFQ', rfq_id, 'CommEvaluation', 'Commercial evaluation of all submissions complete.', 'Agent:EVAL.09', datetime.datetime.now().isoformat()))
 
     except Exception as e:
         logging.error(f"An error occurred in Commercial Evaluation: {e}", exc_info=True)

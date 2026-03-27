@@ -8,7 +8,7 @@ import datetime
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from state import S2CState
-from db import get_db
+from db import get_db, next_id
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -37,7 +37,7 @@ def handle_approval_response(db_path, nfa_id, tier, decision):
         else:
             # Last tier approved
             cursor.execute("UPDATE NFA_Log SET NFA_Status = 'Approved' WHERE NFA_ID = ?", (nfa_id,))
-            cursor.execute("UPDATE Consolidated_PRs SET NFA_Status = 'Approved', NFA_Approved_At = ? WHERE NFA_ID = (SELECT NFA_ID FROM NFA_Log WHERE NFA_ID = ?)",
+            cursor.execute("UPDATE Consolidated_PRs SET NFA_Status = 'Approved', NFA_Approved_At = ? WHERE Consolidation_Cluster_ID = (SELECT Consolidation_Cluster_ID FROM NFA_Log WHERE NFA_ID = ?)",
                            (datetime.datetime.now().isoformat(), nfa_id))
             logging.info(f"Final approval for NFA {nfa_id} received. Process complete.")
             return False # End of chain
@@ -66,6 +66,7 @@ def nfa_approval(state: S2CState) -> S2CState:
     state['current_agent'] = "nfa_approval"
     errors = state.get('errors', [])
     state['nfa_approved'] = False
+    nfa_ids_to_simulate = []
 
     try:
         with get_db(state['db_path']) as conn:
@@ -93,30 +94,46 @@ def nfa_approval(state: S2CState) -> S2CState:
                 if not approval_chain: continue
 
                 # Insert all pending approvals into the unified Approval_Log
-                c2 = conn.cursor()
-                c2.execute("SELECT MAX(CAST(SUBSTR(Approval_ID,6) AS INTEGER)) FROM Approval_Log")
-                appr_seq = (c2.fetchone()[0] or 0) + 1
                 for tier in approval_chain:
+                    desig_code = tier['Approver_Designation']
+                    # Look up email — use Active_Directory, fall back to DES-L4-CFO if hardcoded 'DES-CFO' used
+                    lookup_code = 'DES-L4-CFO' if desig_code == 'DES-CFO' else desig_code
+                    cursor.execute(
+                        "SELECT Email FROM Active_Directory WHERE Designation_Code = ?",
+                        (lookup_code,)
+                    )
+                    ad_row = cursor.fetchone()
+                    approver_email = ad_row['Email'] if ad_row else f'{desig_code.lower()}@jswsteel.in'
+
+                    appr_id = next_id(cursor, 'Approval_Log', 'Approval_ID', 'APPR')
                     cursor.execute("""INSERT INTO Approval_Log
-                                      (Approval_ID, Entity_Type, Entity_ID, Approver_Designation, Decision, Tier_Level)
-                                      VALUES (?, 'NFA', ?, ?, 'Pending', ?)""",
-                                   (f"APPR-{appr_seq:04d}", nfa_id,
-                                    tier['Approver_Designation'], tier['Tier_Level']))
-                    appr_seq += 1
+                                      (Approval_ID, Entity_Type, Entity_ID, Approver_Email,
+                                       Approver_Designation, Decision, Tier_Level)
+                                      VALUES (?, 'NFA', ?, ?, ?, 'Pending', ?)""",
+                                   (appr_id, nfa_id, approver_email,
+                                    desig_code, tier['Tier_Level']))
 
                 # Start the chain by emailing the first tier (simulated)
                 logging.info(f"Approval chain for {nfa_id} created. Notifying first tier.")
-                
+
                 # Update NFA status
                 cursor.execute("UPDATE NFA_Log SET NFA_Status = 'Approval_Pending' WHERE NFA_ID = ?", (nfa_id,))
 
-                # For testing, run the full approval simulation
-                if simulate_nfa_approval(state['db_path'], nfa_id):
-                    state['nfa_approved'] = True
-    
+                # Collect IDs for simulation after this connection is committed and closed
+                nfa_ids_to_simulate.append(nfa_id)
+
     except Exception as e:
         logging.error(f"An error occurred in NFA Approval: {e}", exc_info=True)
         errors.append(str(e))
+
+    # Run approval simulation AFTER the outer connection is closed to avoid locking
+    for nfa_id in nfa_ids_to_simulate:
+        try:
+            if simulate_nfa_approval(state['db_path'], nfa_id):
+                state['nfa_approved'] = True
+        except Exception as e:
+            logging.error(f"An error occurred simulating approval for {nfa_id}: {e}", exc_info=True)
+            errors.append(str(e))
 
     state['errors'] = errors
     logging.info("Exiting NFA.14.")

@@ -9,7 +9,7 @@ import time
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from state import S2CState
-from db import get_db
+from db import get_db, next_id
 from feedback import request_human_feedback
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -44,7 +44,7 @@ def sap_bapi_call(state: S2CState) -> S2CState:
             for call in pending_calls:
                 po_ref_id = call['PO_Ref_ID']
                 nfa_id = call['NFA_ID']
-                
+
                 # Step 2: Gather all data for PO creation
                 cursor.execute("SELECT Recommended_Vendor, Negotiated_Unit_Price FROM NFA_Log WHERE NFA_ID = ?", (nfa_id,))
                 nfa_data = cursor.fetchone()
@@ -109,8 +109,9 @@ def sap_bapi_call(state: S2CState) -> S2CState:
                     cursor.execute("UPDATE PO_Reference SET SAP_PO_Number = ?, API_Call_Status = 'Success' WHERE PO_Ref_ID = ?", (sap_po_number, po_ref_id))
                     state["sap_po_number"] = sap_po_number
                     state["po_created"] = True
-                    cursor.execute("INSERT INTO Process_Events_Log (Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?)",
-                                   ('S2C.PO.19', 'SAP_PO', sap_po_number, 'PO_Created', f"SAP PO created for NFA {nfa_id}", 'Agent:PO.16', datetime.datetime.now().isoformat()))
+                    evt_id = next_id(cursor, 'Process_Events_Log', 'Event_ID', 'EVT')
+                    cursor.execute("INSERT INTO Process_Events_Log (Event_ID, Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?,?)",
+                                   (evt_id, 'S2C.PO.19', 'SAP_PO', sap_po_number, 'PO_Created', f"SAP PO created for NFA {nfa_id}", 'Agent:PO.16', datetime.datetime.now().isoformat()))
                 else:
                     logging.critical(f"Permanently failed to create SAP PO for {po_ref_id} after 3 attempts.")
                     cursor.execute("UPDATE PO_Reference SET API_Call_Status = 'Failed_Permanent' WHERE PO_Ref_ID = ?", (po_ref_id,))

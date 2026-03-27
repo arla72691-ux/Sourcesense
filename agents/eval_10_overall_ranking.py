@@ -10,7 +10,7 @@ import re
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from state import S2CState
-from db import get_db
+from db import get_db, next_id
 from feedback import request_human_feedback
 import config
 
@@ -22,10 +22,10 @@ def parse_weights(criteria_string: str) -> dict:
     try:
         tech_match = re.search(r'Tech:\s*(\d+)%', criteria_string, re.I)
         if tech_match: weights['tech'] = float(tech_match.group(1)) / 100
-        
+
         comm_match = re.search(r'Comm:\s*(\d+)%', criteria_string, re.I)
         if comm_match: weights['comm'] = float(comm_match.group(1)) / 100
-        
+
         min_match = re.search(r'Min score:\s*(\d+)', criteria_string, re.I)
         if min_match: weights['min_score'] = float(min_match.group(1))
     except Exception as e:
@@ -55,7 +55,11 @@ def overall_ranking(state: S2CState) -> S2CState:
             rfqs_to_rank = cursor.fetchall()
 
             if not rfqs_to_rank:
-                logging.info("No RFQs ready for overall ranking.")
+                logging.info("No new RFQs ready for overall ranking.")
+                # If any overall evaluations already exist, the pipeline can proceed
+                cursor.execute("SELECT COUNT(*) FROM RFQ_Overall_Evaluations")
+                if cursor.fetchone()[0] > 0:
+                    state['evaluations_complete'] = True
                 return state
 
             for rfq in rfqs_to_rank:
@@ -86,14 +90,15 @@ def overall_ranking(state: S2CState) -> S2CState:
                     overall_score = tech_weighted + comm_weighted
 
                     # Step 3: Insert overall evaluation
-                    cursor.execute("INSERT INTO RFQ_Overall_Evaluations (Submission_ID, Tech_Weighted_Score, Comm_Weighted_Score, Overall_Score) VALUES (?, ?, ?, ?)",
-                                   (sub['Submission_ID'], tech_weighted, comm_weighted, overall_score))
-                    
+                    oe_id = next_id(cursor, 'RFQ_Overall_Evaluations', 'Overall_Eval_ID', 'OE')
+                    cursor.execute("INSERT INTO RFQ_Overall_Evaluations (Overall_Eval_ID, Submission_ID, Tech_Weighted_Score, Comm_Weighted_Score, Overall_Score) VALUES (?, ?, ?, ?, ?)",
+                                   (oe_id, sub['Submission_ID'], tech_weighted, comm_weighted, overall_score))
+
                     ranked_list.append({
-                        'vendor': sub['Vendor_Code'], 
+                        'vendor': sub['Vendor_Code'],
                         'score': round(overall_score, 2)
                     })
-                
+
                 # Step 4: Rank list
                 ranked_list.sort(key=lambda x: x['score'], reverse=True)
 
@@ -101,12 +106,14 @@ def overall_ranking(state: S2CState) -> S2CState:
                 if ranked_list:
                     top_vendor = ranked_list[0]
                     logging.info(f"Evaluation complete for {rfq_id}: {top_vendor['vendor']} ranked 1st with score {top_vendor['score']}")
-                    cursor.execute("INSERT INTO Process_Events_Log (Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?)",
-                                   ('S2C.RFQ.12', 'RFQ', rfq_id, 'EvaluationComplete', f"Evaluation complete: {top_vendor['vendor']} ranked 1st with score {top_vendor['score']}", 'Agent:EVAL.10', datetime.datetime.now().isoformat()))
+                    evt_id = next_id(cursor, 'Process_Events_Log', 'Event_ID', 'EVT')
+                    cursor.execute("INSERT INTO Process_Events_Log (Event_ID, Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?,?)",
+                                   (evt_id, 'S2C.RFQ.12', 'RFQ', rfq_id, 'EvaluationComplete', f"Evaluation complete: {top_vendor['vendor']} ranked 1st with score {top_vendor['score']}", 'Agent:EVAL.10', datetime.datetime.now().isoformat()))
 
                 # Step 7: CTRL-011 final check
-                cursor.execute("INSERT INTO Compliance_Log (Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?,?,?,?,?,?)",
-                               ('CTRL-011', 'RFQ', rfq_id, 'Pass', 'All submissions have been ranked.', datetime.datetime.now().isoformat()))
+                comp_id = next_id(cursor, 'Compliance_Log', 'Compliance_ID', 'COMP')
+                cursor.execute("INSERT INTO Compliance_Log (Compliance_ID, Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?,?,?,?,?,?,?)",
+                               (comp_id, 'CTRL-011', 'RFQ', rfq_id, 'Pass', 'All submissions have been ranked.', datetime.datetime.now().isoformat()))
 
                 # Human feedback: buyer reviews ranking before negotiation starts
                 cursor.execute("""

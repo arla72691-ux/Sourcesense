@@ -8,7 +8,7 @@ import datetime
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from state import S2CState
-from db import get_db
+from db import get_db, next_id
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -46,17 +46,19 @@ def status_update(state: S2CState) -> S2CState:
                 buyer = cursor.fetchone()['Assigned_Buyer']
 
                 # Step 4 & 5: Update cluster status to PO_Created and then Closed
-                cursor.execute("UPDATE Consolidated_PRs SET PR_Status = 'PO_Created', PO_Created_At = ? WHERE Consolidation_Cluster_ID = ?", 
+                cursor.execute("UPDATE Consolidated_PRs SET PR_Status = 'PO_Created', PO_Created_At = ? WHERE Consolidation_Cluster_ID = ?",
                                (sap_data['SAP_Created_At'], cluster_id))
-                cursor.execute("UPDATE Consolidated_PRs SET PR_Status = 'Closed', Closed_At = ? WHERE Consolidation_Cluster_ID = ?", 
+                cursor.execute("UPDATE Consolidated_PRs SET PR_Status = 'Closed', Closed_At = ? WHERE Consolidation_Cluster_ID = ?",
                                (datetime.datetime.now().isoformat(), cluster_id))
 
-                # Step 6: UPDATE Material_Master with new LPP
+                # Step 6: UPDATE LPP_Master with new LPP
                 cursor.execute("""
-                    UPDATE Material_Master 
-                    SET Last_Purchase_Price = ?, LPP_Currency = 'INR', LPP_Date = ?, LPP_Vendor_Code = ?, Updated_At = ?
-                    WHERE Material_Code = ?
-                """, (sap_data['Unit_Price'], sap_data['SAP_Created_At'].split('T')[0], sap_data['Vendor_Code'], datetime.datetime.now().isoformat(), sap_data['Material_Code']))
+                    INSERT OR REPLACE INTO LPP_Master
+                        (Material_Code, Plant, Last_Purchase_Price, Currency, Last_PO_Date, Last_Vendor_Code, Last_PO_Number, Updated_At)
+                    VALUES (?, ?, ?, 'INR', ?, ?, ?, ?)
+                """, (sap_data['Material_Code'], sap_data['Plant'], sap_data['Unit_Price'],
+                      sap_data['SAP_Created_At'].split('T')[0], sap_data['Vendor_Code'],
+                      sap_data['SAP_PO_Number'], datetime.datetime.now().isoformat()))
                 logging.info(f"Updated LPP for material {sap_data['Material_Code']} to {sap_data['Unit_Price']}.")
 
                 # Step 7: Release buyer workload
@@ -66,8 +68,9 @@ def status_update(state: S2CState) -> S2CState:
                 logging.info(f"Notifying stakeholders about completion of PO {sap_po_number}.")
                 # send_email(...) would be here
 
-                cursor.execute("INSERT INTO Process_Events_Log (Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?)",
-                               ('S2C.PO.19', 'Cluster', cluster_id, 'Cluster_Closed', f'Procurement complete. PO {sap_po_number} acknowledged.', 'Agent:PO.19', datetime.datetime.now().isoformat()))
+                evt_id = next_id(cursor, 'Process_Events_Log', 'Event_ID', 'EVT')
+                cursor.execute("INSERT INTO Process_Events_Log (Event_ID, Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?,?)",
+                               (evt_id, 'S2C.PO.19', 'Cluster', cluster_id, 'Cluster_Closed', f'Procurement complete. PO {sap_po_number} acknowledged.', 'Agent:PO.19', datetime.datetime.now().isoformat()))
 
     except Exception as e:
         logging.error(f"An error occurred in Status Update: {e}", exc_info=True)

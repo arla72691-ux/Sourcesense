@@ -10,7 +10,7 @@ from email.mime.text import MIMEText
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from state import S2CState
-from db import get_db
+from db import get_db, next_id
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -79,21 +79,21 @@ def buyer_assignment(state: S2CState) -> S2CState:
                     # Verify spend limit
                     if buyer['Annual_Spend_Limit'] < total_value:
                         continue
-                    
+
                     # Find buyer with the lowest workload ratio
                     workload_ratio = (buyer['Current_Workload'] + 1) / buyer['Max_Workload']
                     if workload_ratio < lowest_ratio:
                         lowest_ratio = workload_ratio
                         best_buyer = dict(buyer)
-                
+
                 if best_buyer:
                     buyer_id = best_buyer['Buyer_ID']
                     logging.info(f"Assigning cluster {cluster_id} to buyer {buyer_id}.")
-                    
+
                     # Update cluster with assigned buyer
                     cursor.execute("UPDATE Consolidated_PRs SET Assigned_Buyer = ?, PR_Status = 'Buyer_Assigned', Buyer_Assigned_At = ? WHERE Consolidation_Cluster_ID = ?",
                                    (buyer_id, datetime.datetime.now().isoformat(), cluster_id))
-                    
+
                     # Update buyer's workload
                     cursor.execute("UPDATE Buyer_Master SET Current_Workload = Current_Workload + 1 WHERE Buyer_ID = ?", (buyer_id,))
 
@@ -105,17 +105,19 @@ def buyer_assignment(state: S2CState) -> S2CState:
                         cursor.execute("SELECT Email FROM Active_Directory WHERE Designation_Code = ?", (approver_designation,))
                         approver = cursor.fetchone()
                         if approver:
-                            cursor.execute("INSERT INTO Approval_Log (Entity_Type, Entity_ID, Approver_Email, Approver_Designation, Decision, Decided_At) VALUES (?, ?, ?, ?, ?, ?)",
-                                           ('Cluster', cluster_id, approver['Email'], approver_designation, 'Pending', datetime.datetime.now().isoformat()))
-                            logging.info(f"Approval request for {cluster_id} sent to {approver_designation} ({approver['Employee_Email']}).")
+                            appr_id = next_id(cursor, 'Approval_Log', 'Approval_ID', 'APPR')
+                            cursor.execute("INSERT INTO Approval_Log (Approval_ID, Entity_Type, Entity_ID, Approver_Email, Approver_Designation, Decision, Decided_At) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                           (appr_id, 'Cluster', cluster_id, approver['Email'], approver_designation, 'Pending', datetime.datetime.now().isoformat()))
+                            logging.info(f"Approval request for {cluster_id} sent to {approver_designation} ({approver['Email']}).")
                         else:
                             errors.append(f"Could not find approver email for designation {approver_designation}.")
                     else:
                         errors.append(f"Could not determine DOP for cluster {cluster_id} with value {total_value}.")
 
                     # Log process event
-                    cursor.execute("INSERT INTO Process_Events_Log (Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?)",
-                                   ('S2C.RFQ.03', 'Cluster', cluster_id, 'BuyerAssignment', f'Assigned to {buyer_id}', 'Agent:PR.03', datetime.datetime.now().isoformat()))
+                    evt_id = next_id(cursor, 'Process_Events_Log', 'Event_ID', 'EVT')
+                    cursor.execute("INSERT INTO Process_Events_Log (Event_ID, Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?,?)",
+                                   (evt_id, 'S2C.RFQ.03', 'Cluster', cluster_id, 'BuyerAssignment', f'Assigned to {buyer_id}', 'Agent:PR.03', datetime.datetime.now().isoformat()))
 
                     # Send email to buyer
                     email_subject = f"New Procurement Cluster Assigned: {cluster_id}"

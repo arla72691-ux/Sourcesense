@@ -10,7 +10,7 @@ from email.mime.text import MIMEText
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from state import S2CState
-from db import get_db
+from db import get_db, next_id
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -20,17 +20,32 @@ def record_submission(db_path, rfq_id, vendor_code, quoted_price, lead_time_days
     logging.info(f"SIMULATION: Recording submission from {vendor_code} for {rfq_id}.")
     with get_db(db_path) as conn:
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO RFQ_Submissions (RFQ_ID, Vendor_Code, Quoted_Unit_Price, Lead_Time_Days, Submitted_At) VALUES (?,?,?,?,?)",
-                       (rfq_id, vendor_code, quoted_price, lead_time_days, datetime.datetime.now().isoformat()))
+        # Fix: add Submission_ID via next_id
+        sub_id = next_id(cursor, 'RFQ_Submissions', 'Submission_ID', 'SUB')
+        cursor.execute("INSERT INTO RFQ_Submissions (Submission_ID, RFQ_ID, Vendor_Code, Quoted_Unit_Price, Lead_Time_Days, Submitted_At) VALUES (?,?,?,?,?,?)",
+                       (sub_id, rfq_id, vendor_code, quoted_price, lead_time_days, datetime.datetime.now().isoformat()))
         # In a real system, file_content would be saved to DMS and file_id stored.
-        cursor.execute("INSERT INTO Process_Events_Log (Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?)",
-                       ('S2C.RFQ.09', 'Submission', rfq_id, 'SubmissionReceived', f'Offer from {vendor_code}', vendor_code, datetime.datetime.now().isoformat()))
+        # Fix: add Event_ID via next_id
+        evt_id = next_id(cursor, 'Process_Events_Log', 'Event_ID', 'EVT')
+        cursor.execute("INSERT INTO Process_Events_Log (Event_ID, Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?,?,?,?,?,?,?,?)",
+                       (evt_id, 'S2C.RFQ.09', 'Submission', rfq_id, 'SubmissionReceived', f'Offer from {vendor_code}', vendor_code, datetime.datetime.now().isoformat()))
 
 def simulate_submissions(db_path):
+    """Auto-detect all Dispatched RFQs with no submissions yet and insert simulated offers."""
     logging.warning("SIMULATION: Inserting fake submissions for open RFQs.")
-    record_submission(db_path, 'RFQ-2025-00291', 'V-20048', 2650, 15)
-    record_submission(db_path, 'RFQ-2025-00291', 'V-20049', 2800, 12)
-    # V-20053 does not submit in this simulation
+    with get_db(db_path) as conn:
+        c = conn.cursor()
+        c.execute("SELECT r.RFQ_ID FROM RFQ_Log r WHERE r.RFQ_Status = 'Dispatched' AND r.RFQ_ID NOT IN (SELECT DISTINCT RFQ_ID FROM RFQ_Submissions)")
+        rfqs_without_submissions = [r['RFQ_ID'] for r in c.fetchall()]
+        for rfq_id in rfqs_without_submissions:
+            c.execute("SELECT Vendor_Code FROM RFQ_Dispatch_Log WHERE RFQ_ID = ?", (rfq_id,))
+            vendors = [r['Vendor_Code'] for r in c.fetchall()]
+            for i, vendor_code in enumerate(vendors):
+                # Vary prices slightly per vendor
+                base_price = 2500.0
+                price = round(base_price * (1 + i * 0.03 - 0.01), 2)  # spread prices
+                lead_time = 14 + i * 2
+                record_submission(db_path, rfq_id, vendor_code, price, lead_time)
 
 # --- Email helper ---
 def send_email(to_email: str, subject: str, body: str):
@@ -44,9 +59,9 @@ def offer_collection(state: S2CState) -> S2CState:
     logging.info("Entering RFQ.09 - Offer Collection agent.")
     state['current_agent'] = "rfq_09_offer_collection"
     errors = state.get('errors', [])
-    
-    # In a real run, you might want to simulate submissions first
-    # simulate_submissions(state['db_path'])
+
+    # Simulate vendor submissions for any dispatched RFQs that have none yet
+    simulate_submissions(state['db_path'])
 
     try:
         with get_db(state['db_path']) as conn:
@@ -67,7 +82,7 @@ def offer_collection(state: S2CState) -> S2CState:
 
                 cursor.execute("SELECT Vendor_Code FROM RFQ_Dispatch_Log WHERE RFQ_ID = ?", (rfq_id,))
                 dispatched_vendors = {row['Vendor_Code'] for row in cursor.fetchall()}
-                
+
                 cursor.execute("SELECT Vendor_Code FROM RFQ_Submissions WHERE RFQ_ID = ?", (rfq_id,))
                 submitted_vendors = {row['Vendor_Code'] for row in cursor.fetchall()}
 

@@ -10,7 +10,7 @@ from email.mime.text import MIMEText
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from state import S2CState
-from db import get_db
+from db import get_db, next_id
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -55,7 +55,7 @@ def rfq_approval(state: S2CState) -> S2CState:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT r.RFQ_ID, c.Total_Value, c.Description
-                FROM RFQ_Log r 
+                FROM RFQ_Log r
                 JOIN Consolidated_PRs c ON r.Consolidation_Cluster_ID = c.Consolidation_Cluster_ID
                 WHERE r.RFQ_Status = 'Ready_For_Approval'
             """,)
@@ -81,16 +81,20 @@ def rfq_approval(state: S2CState) -> S2CState:
                 # Step 3: Insert approval logs and send emails
                 for approver_info in approvers:
                     designation = approver_info['Approver_Designation']
-                    cursor.execute("SELECT Employee_Email FROM Designations_Master WHERE Designation_Code = ?", (designation,))
+                    # Fix: Designations_Master no longer exists; use Active_Directory with Email column
+                    cursor.execute("SELECT Email FROM Active_Directory WHERE Designation_Code = ?", (designation,))
                     approver = cursor.fetchone()
                     if not approver:
                         errors.append(f"No employee found for designation {designation} for RFQ {rfq_id}.")
                         continue
-                    
-                    approver_email = approver['Employee_Email']
-                    cursor.execute("INSERT INTO Approval_Log (Entity_Type, Entity_ID, Approver_Email, Approver_Designation, Decision, Created_At) VALUES (?, ?, ?, ?, 'Pending', ?)",
-                                   ('RFQ', rfq_id, approver_email, designation, datetime.datetime.now().isoformat()))
-                    
+
+                    # Fix: use 'Email' column (not 'Employee_Email')
+                    approver_email = approver['Email']
+                    # Fix: add Approval_ID via next_id; remove non-existent Created_At column
+                    appr_id = next_id(cursor, 'Approval_Log', 'Approval_ID', 'APPR')
+                    cursor.execute("INSERT INTO Approval_Log (Approval_ID, Entity_Type, Entity_ID, Approver_Email, Approver_Designation, Decision) VALUES (?, ?, ?, ?, ?, 'Pending')",
+                                   (appr_id, 'RFQ', rfq_id, approver_email, designation))
+
                     email_subject = f"[ACTION REQUIRED] RFQ {rfq_id} Approval — {rfq['Description']}"
                     email_body = f"""Dear Approver,\n\nPlease review and approve RFQ {rfq_id}.\n
 Details:\n- Value: {total_value}\n- Description: {rfq['Description']}\n\nAn approval link would be here in a real system.
@@ -98,8 +102,9 @@ Details:\n- Value: {total_value}\n- Description: {rfq['Description']}\n\nAn appr
                     send_email(approver_email, email_subject, email_body)
 
                 # Step 4: CTRL-005
-                cursor.execute("INSERT INTO Compliance_Log (Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?,?,?,?,?,?)",
-                               ('CTRL-005', 'RFQ', rfq_id, 'Pass', f'DOP check complete. {len(approvers)} approvers notified.', datetime.datetime.now().isoformat()))
+                comp_id = next_id(cursor, 'Compliance_Log', 'Compliance_ID', 'COMP')
+                cursor.execute("INSERT INTO Compliance_Log (Compliance_ID, Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?,?,?,?,?,?,?)",
+                               (comp_id, 'CTRL-005', 'RFQ', rfq_id, 'Pass', f'DOP check complete. {len(approvers)} approvers notified.', datetime.datetime.now().isoformat()))
 
                 # Step 5: Update RFQ status
                 cursor.execute("UPDATE RFQ_Log SET RFQ_Status = 'Approval_Pending' WHERE RFQ_ID = ?", (rfq_id,))

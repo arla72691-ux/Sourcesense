@@ -17,9 +17,25 @@ import config
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def parse_weights(criteria_string: str) -> dict:
-    """Parses a string like 'Tech: 40%, Comm: 60%, Min score: 70' into a dict."""
+    """Parses evaluation criteria into tech/comm weights.
+    Handles both JSON format {"technical_weight": 0.6, "commercial_weight": 0.4}
+    and legacy text format 'Tech: 40%, Comm: 60%, Min score: 70'.
+    """
     weights = {'tech': 0.0, 'comm': 0.0, 'min_score': 0.0}
+    if not criteria_string:
+        return weights
     try:
+        # Try JSON format first
+        data = json.loads(criteria_string)
+        if isinstance(data, dict):
+            weights['tech'] = float(data.get('technical_weight', data.get('tech_weight', 0.0)))
+            weights['comm'] = float(data.get('commercial_weight', data.get('comm_weight', 0.0)))
+            weights['min_score'] = float(data.get('min_score', 0.0))
+            return weights
+    except (json.JSONDecodeError, ValueError, TypeError):
+        pass
+    try:
+        # Fall back to legacy text format: "Tech: 40%, Comm: 60%, Min score: 70"
         tech_match = re.search(r'Tech:\s*(\d+)%', criteria_string, re.I)
         if tech_match: weights['tech'] = float(tech_match.group(1)) / 100
 
@@ -68,7 +84,7 @@ def overall_ranking(state: S2CState) -> S2CState:
 
                 # Step 1: Parse weights
                 weights = parse_weights(rfq['Evaluation_Criteria'])
-                if not all(weights.values()):
+                if not weights['tech'] or not weights['comm']:
                     errors.append(f"Invalid weights for RFQ {rfq_id}: {rfq['Evaluation_Criteria']}")
                     continue
 

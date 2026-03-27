@@ -50,6 +50,7 @@ def rfq_approval(state: S2CState) -> S2CState:
     state['current_agent'] = "rfq_07_rfq_approval"
     errors = state.get('errors', [])
 
+    rfq_ids_to_simulate = []
     try:
         with get_db(state['db_path']) as conn:
             cursor = conn.cursor()
@@ -110,13 +111,20 @@ Details:\n- Value: {total_value}\n- Description: {rfq['Description']}\n\nAn appr
                 cursor.execute("UPDATE RFQ_Log SET RFQ_Status = 'Approval_Pending' WHERE RFQ_ID = ?", (rfq_id,))
                 logging.info(f"RFQ {rfq_id} moved to Approval_Pending.")
 
-                # For testing purposes, immediately simulate the approvals
-                # In a real scenario, this would be handled by an external webhook.
-                simulate_approval(rfq_id, state['db_path'])
+                # Collect IDs to simulate after outer connection is committed and closed
+                rfq_ids_to_simulate.append(rfq_id)
 
     except Exception as e:
         logging.error(f"An error occurred in RFQ Approval: {e}", exc_info=True)
         errors.append(str(e))
+
+    # Simulate approvals AFTER outer connection is closed to avoid DB locking
+    for rfq_id in rfq_ids_to_simulate:
+        try:
+            simulate_approval(rfq_id, state['db_path'])
+        except Exception as e:
+            logging.error(f"Failed to simulate approval for RFQ {rfq_id}: {e}", exc_info=True)
+            errors.append(str(e))
 
     state['errors'] = errors
     logging.info("Exiting RFQ.07.")

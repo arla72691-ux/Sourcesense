@@ -4,15 +4,13 @@ import json
 import sys
 import os
 import datetime
-import numpy as np
-
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from google import genai
 from feedback import request_human_feedback
 from state import S2CState
-from db import get_db
+from db import get_db, next_id
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -71,8 +69,9 @@ def negotiation_copilot(state: S2CState) -> S2CState:
                         auto_accepted_price = best_quote
                     
                     if auto_accepted_price:
-                        cursor.execute("INSERT INTO Negotiation_Shortlist_Approval (RFQ_ID, Vendor_Code, Negotiated_Price, Approval_Status) VALUES (?, ?, ?, 'Auto_Approved')",
-                                       (rfq_id, top_vendor['Vendor_Code'], auto_accepted_price))
+                        neg_appr_id = next_id(cursor, 'Negotiation_Shortlist_Approval', 'Neg_Approval_ID', 'NEG')
+                        cursor.execute("INSERT INTO Negotiation_Shortlist_Approval (Neg_Approval_ID, RFQ_ID, Vendor_Code, Negotiated_Price, Approval_Status) VALUES (?, ?, ?, ?, 'Auto_Approved')",
+                                       (neg_appr_id, rfq_id, top_vendor['Vendor_Code'], auto_accepted_price))
                         state['negotiated_price'] = auto_accepted_price
                         # This will be picked up by nfa_generation directly
                         cursor.execute("UPDATE Consolidated_PRs SET PR_Status = 'Negotiation_Approved' WHERE RFQ_ID = ?", (rfq_id,))
@@ -94,15 +93,35 @@ def negotiation_copilot(state: S2CState) -> S2CState:
                     'delivery_pct': 98, 'quality_incidents': 1, 'annual_spend': 5000000, 'vendor_share': 15
                 }
 
-                prompt = '''...'''.format(**prompt_data) # Using the exact prompt from user request
+                prompt = '''You are a procurement negotiation AI for a steel plant.
+
+Material: {material_description}
+Quantity: {quantity} {uom} | Material Group: {material_group}
+
+Market Intelligence:
+- Last Purchase Price (LPP): {lpp}
+- Best Vendor Quote: {best_quote} from {best_vendor}
+- BATNA Price: {batna_price} from {batna_vendor}
+- Price Trend: {price_trend} | Avg Market Price: {avg_price} | Min Price: {min_price}
+
+Vendor Profile ({vendor_name}):
+- POs last 12 months: {total_pos} | Last PO Price: {last_po_price}
+- Quality Rating: {quality_rating}/5 | On-time Delivery: {delivery_pct}%
+- Quality Incidents: {quality_incidents} | Annual Spend: {annual_spend} | Wallet Share: {vendor_share}%
+
+Provide a negotiation strategy. Return JSON only:
+{{"target_price": <number>, "walkaway_price": <number>, "spend_analysis": "<brief>", "market_summary": "<brief>", "vendor_email_draft": "<short negotiation email>"}}'''.format(**prompt_data)
+
                 response = client.models.generate_content(model="gemini-2.5-pro", contents=prompt)
                 strategy = json.loads(response.text.strip().replace('```json', '').replace('```', ''))
 
                 # Step 3: Store and act
-                cursor.execute("INSERT INTO Negotiation_Intelligence_Log (RFQ_ID, Spend_Analysis, Market_Research_Summary) VALUES (?, ?, ?)",
-                               (rfq_id, strategy['spend_analysis'], strategy['market_summary']))
-                cursor.execute("INSERT INTO Negotiation_Shortlist_Approval (RFQ_ID, Vendor_Code, Approval_Status) VALUES (?, ?, 'Pending')",
-                               (rfq_id, top_vendor['Vendor_Code']))
+                brief_id = next_id(cursor, 'Negotiation_Intelligence_Log', 'Brief_ID', 'NEG')
+                cursor.execute("INSERT INTO Negotiation_Intelligence_Log (Brief_ID, RFQ_ID, Spend_Analysis, Market_Research_Summary) VALUES (?, ?, ?, ?)",
+                               (brief_id, rfq_id, strategy['spend_analysis'], strategy['market_summary']))
+                neg_appr_id = next_id(cursor, 'Negotiation_Shortlist_Approval', 'Neg_Approval_ID', 'NEG')
+                cursor.execute("INSERT INTO Negotiation_Shortlist_Approval (Neg_Approval_ID, RFQ_ID, Vendor_Code, Approval_Status) VALUES (?, ?, ?, 'Pending')",
+                               (neg_appr_id, rfq_id, top_vendor['Vendor_Code']))
                 
                 # send_email(..., strategy['vendor_email_draft'])
                 logging.info(f"Negotiation strategy for RFQ {rfq_id} generated. Target: {strategy['target_price']}. Waiting for vendor BAFO.")

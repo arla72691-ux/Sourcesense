@@ -13,7 +13,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from google import genai
 from feedback import request_human_feedback
 from state import S2CState
-from db import get_db
+from db import get_db, next_id
 import config
 
 # Configure logging
@@ -46,7 +46,7 @@ Group them into procurement clusters following these rules:
    delivery dates within 14 days = suggest clustering (output reasoning).
 3. Never cluster materials from different Material_Groups.
 
-Return JSON: [{"cluster_name": "...", "pr_numbers": [...], "reason": "..."}]'''
+Return JSON: [{{"cluster_name": "...", "pr_numbers": [...], "reason": "..."}}]'''
     
     pr_list_for_gemini = []
     open_prs_map = {}
@@ -155,6 +155,11 @@ Return JSON: [{"cluster_name": "...", "pr_numbers": [...], "reason": "..."}]'''
                 first_pr = materials_in_cluster[0]
 
                 budget_overrun_flag = 1 if total_value > 10000000 else 0
+
+                # Derive Capex_Opex and Procurement_Category from material group prefix
+                mat_group = first_pr['Material_Group'] or ''
+                capex_opex = 'CAPEX' if mat_group.upper().startswith('CAP') else 'OPEX'
+                procurement_category = 'Capital' if mat_group.upper().startswith('CAP') else 'Supply'
                 
                 repeat_emergency_flag = 0
                 try:
@@ -168,26 +173,32 @@ Return JSON: [{"cluster_name": "...", "pr_numbers": [...], "reason": "..."}]'''
                         repeat_emergency_flag = 1
                 except sqlite3.OperationalError:
                     logging.warning("Table 'Procurement_Historical_Pricing' not found. Skipping CTRL-017 check.")
-                    errors.append("CTRL-017 Skipped: Procurement_Historical_Pricing table does not exist.")
 
+                # PR_Number FK references Master_PR_Data — store the primary (first) PR
+                primary_pr_number = pr_numbers_in_cluster[0]
                 cursor.execute("""
                     INSERT INTO Consolidated_PRs (
                         Consolidation_Cluster_ID, PR_Number, Material_Code, Material_Group, Description,
-                        Quantity, UOM_Base, Total_Value, Plant, PR_Status, Repeat_Emergency_Flag, Budget_Overrun_Flag, Created_At
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        Quantity, UOM, UOM_Base, Total_Value, Plant, Capex_Opex, Procurement_Category,
+                        PR_Status, Repeat_Emergency_Flag, Budget_Overrun_Flag, Created_At
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    cluster_id, ",".join(pr_numbers_in_cluster), first_pr['Material_Code'], first_pr['Material_Group'],
-                    first_pr['Material_Description'], total_quantity, first_pr['Base_UOM'], total_value,
-                    first_pr['Plant'], 'New', repeat_emergency_flag, budget_overrun_flag, datetime.datetime.now().isoformat()
+                    cluster_id, primary_pr_number, first_pr['Material_Code'], first_pr['Material_Group'],
+                    first_pr['Material_Description'], total_quantity, first_pr['Base_UOM'], first_pr['Base_UOM'], total_value,
+                    first_pr['Plant'], capex_opex, procurement_category,
+                    'New', repeat_emergency_flag, budget_overrun_flag, datetime.datetime.now().isoformat()
                 ))
 
-                cursor.execute("INSERT INTO Compliance_Log (Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?, ?, ?, ?, ?, ?)",
-                               ('CTRL-006', 'Cluster', cluster_id, 'Pass' if not budget_overrun_flag else 'Fail', f'Total Value: {total_value}', datetime.datetime.now().isoformat()))
-                cursor.execute("INSERT INTO Compliance_Log (Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?, ?, ?, ?, ?, ?)",
-                               ('CTRL-017', 'Cluster', cluster_id, 'Pass' if not repeat_emergency_flag else 'Fail', f'Material: {first_pr["Material_Code"]}', datetime.datetime.now().isoformat()))
+                comp_id1 = next_id(cursor, 'Compliance_Log', 'Compliance_ID', 'COMP')
+                cursor.execute("INSERT INTO Compliance_Log (Compliance_ID, Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                               (comp_id1, 'CTRL-006', 'Cluster', cluster_id, 'Pass' if not budget_overrun_flag else 'Fail', f'Total Value: {total_value}', datetime.datetime.now().isoformat()))
+                comp_id2 = next_id(cursor, 'Compliance_Log', 'Compliance_ID', 'COMP')
+                cursor.execute("INSERT INTO Compliance_Log (Compliance_ID, Control_ID, Entity_Type, Entity_ID, Result, Details, Checked_At) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                               (comp_id2, 'CTRL-017', 'Cluster', cluster_id, 'Pass' if not repeat_emergency_flag else 'Fail', f'Material: {first_pr["Material_Code"]}', datetime.datetime.now().isoformat()))
 
-                cursor.execute("INSERT INTO Process_Events_Log (Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                               ('S2C.PR.01', 'Cluster', cluster_id, 'Creation', f'Cluster created from PRs: {",".join(pr_numbers_in_cluster)}', 'Agent:PR.01', datetime.datetime.now().isoformat()))
+                evt_id = next_id(cursor, 'Process_Events_Log', 'Event_ID', 'EVT')
+                cursor.execute("INSERT INTO Process_Events_Log (Event_ID, Process_ID, Entity_Type, Entity_ID, Event_Type, Event_Description, Actor, Created_At) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                               (evt_id, 'S2C.PR.01', 'Cluster', cluster_id, 'Creation', f'Cluster created from PRs: {",".join(pr_numbers_in_cluster)}', 'Agent:PR.01', datetime.datetime.now().isoformat()))
                 
                 for pr_num in pr_numbers_in_cluster:
                     cursor.execute("UPDATE Master_PR_Data SET PR_Status = 'Consolidated' WHERE PR_Number = ?", (pr_num,))

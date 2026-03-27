@@ -30,12 +30,14 @@ def handle_bofo_response(db_path, rfq_id, vendor_code, bafo_price):
     return False, None
 
 def simulate_negotiation_approval(state: S2CState):
-    """Finds a negotiation 'Under_Negotiation' and simulates an approved BAFO."""
+    """Finds a negotiation 'Under_Negotiation' and simulates an approved BAFO.
+    All DB operations are done in a single connection to avoid locking.
+    """
     logging.warning("SIMULATION: Running negotiation approval simulation.")
     with get_db(state['db_path']) as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT r.RFQ_ID, n.Vendor_Code, s.Quoted_Unit_Price FROM RFQ_Log r 
+            SELECT r.RFQ_ID, n.Vendor_Code, s.Quoted_Unit_Price FROM RFQ_Log r
             JOIN Negotiation_Shortlist_Approval n ON r.RFQ_ID = n.RFQ_ID
             JOIN RFQ_Submissions s ON r.RFQ_ID = s.RFQ_ID AND n.Vendor_Code = s.Vendor_Code
             WHERE r.RFQ_Status = 'Under_Negotiation' AND n.Approval_Status = 'Pending'
@@ -46,14 +48,18 @@ def simulate_negotiation_approval(state: S2CState):
             rfq_id = negotiation_to_sim['RFQ_ID']
             vendor_code = negotiation_to_sim['Vendor_Code']
             original_quote = negotiation_to_sim['Quoted_Unit_Price']
-            # Simulate a 5% price reduction
-            bafo_price = original_quote * 0.95
-            
-            approved, final_price = handle_bofo_response(state['db_path'], rfq_id, vendor_code, bafo_price)
-            if approved:
-                state['negotiated_price'] = final_price
-                state['rfq_id'] = rfq_id # Pass rfq_id to the next state
-                return True
+            bafo_price = original_quote * 0.95  # Simulate a 5% price reduction
+
+            # Inline BAFO handling (avoids nested connection locking)
+            cursor.execute("UPDATE Negotiation_Shortlist_Approval SET Negotiated_Price = ? WHERE RFQ_ID = ? AND Vendor_Code = ?",
+                           (bafo_price, rfq_id, vendor_code))
+            cursor.execute("UPDATE Negotiation_Shortlist_Approval SET Approval_Status = 'Approved' WHERE RFQ_ID = ?", (rfq_id,))
+            cursor.execute("UPDATE Consolidated_PRs SET PR_Status = 'Negotiation_Approved' WHERE RFQ_ID = ?", (rfq_id,))
+            logging.info(f"SIMULATION: BAFO for RFQ {rfq_id} auto-approved at {bafo_price}.")
+
+            state['negotiated_price'] = bafo_price
+            state['rfq_id'] = rfq_id
+            return True
     return False
 
 def negotiation_approval(state: S2CState) -> S2CState:
